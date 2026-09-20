@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Role {
+  id       Int     @id @default(autoincrement())
+  roleName String  @unique
+  status   Boolean @default(true)
+
+  users User[]
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  passwordHash String
+  firstName    String
+  lastName     String
+  email        String   @unique
+  phoneNumber  String?
+  address      String?
+  createdAt    DateTime @default(now())
+  status       Boolean  @default(true)
+
+  roleId Int
+  role   Role @relation(fields: [roleId], references: [id])
+
+  cart Cart?
+
+  order Order[]
+
+  notifications Notification[]
+}
+
+model Book {
+  id            Int      @id @default(autoincrement())
+  title         String
+  isbn          String   @unique
+  description   String
+  author        String
+  category      String
+  price         Decimal  @db.Decimal(10, 2)
+  stockQuantity Int      @default(0)
+  coverImageUrl String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  cartItems CartItem[]
+
+  orderItems OrderItem[]
+}
+
+model Cart {
+  id Int @id @default(autoincrement())
+
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id])
+
+  cartItems CartItem[]
+}
+
+model CartItem {
+  id Int @id @default(autoincrement())
+
+  cartId Int
+  cart   Cart @relation(fields: [cartId], references: [id])
+
+  bookId Int
+  book   Book @relation(fields: [bookId], references: [id])
+
+  quantity Int @default(1)
+
+  @@unique([cartId, bookId])
+}
+
+model Order {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  totalAmount Decimal @db.Decimal(10, 2)
+
+  shippingAddress String
+
+  createdAt DateTime @default(now())
+
+  status OrderStatus @default(PENDING)
+
+  orderItems OrderItem[]
+}
+
+model OrderItem {
+  id Int @id @default(autoincrement())
+
+  orderId Int
+  order   Order @relation(fields: [orderId], references: [id])
+
+  bookId Int
+  book   Book @relation(fields: [bookId], references: [id])
+
+  quantity Int @default(1)
+
+  unitPrice Decimal @db.Decimal(10, 2)
+
+  totalPrice Decimal @db.Decimal(10, 2)
+}
+
+model Notification {
+  id Int @id @default(autoincrement())
+
+  notifyType String
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  message String
+
+  status Boolean @default(true)
+
+  createdAt DateTime @default(now())
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPING
+  COMPLETED
+  CANCELLED
+}

@@ -16,6 +16,7 @@
         "start:debug": "nest start --debug --watch",
         "start:prod": "node dist/main",
         "lint": "oxlint --type-aware src/ test/",
+        "prisma:seed": "tsx prisma/seed.ts",
         "test": "vitest run",
         "test:watch": "vitest",
         "test:cov": "vitest run --coverage",
@@ -50,6 +51,7 @@
         "prisma": "7.10.0",
         "source-map-support": "^0.5.21",
         "supertest": "^7.0.0",
+        "tsx": "^4.23.15",
         "typescript": "^6.0.2",
         "vite-tsconfig-paths": "^5.1.4",
         "vitest": "^4.1.2"

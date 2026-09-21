@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import type { OrderCreaterRequest } from "./dtos/order-creater-request.dto.js";
 import { OrderStatus, Prisma, type Order } from "../generated/prisma/client.js";
-import { PrismaService } from "../prisma.service.js";
 import type { OrderUpdateRequest } from "./dtos/order-update-request.dto.js";
 import type { OrderUpdateStatusRequest } from "./dtos/order-update-status-request.js";
+import { PrismaService } from "../prisma/prisma.service.js";
 
 @Injectable()
 export class OrdersService {

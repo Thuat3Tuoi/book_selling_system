@@ -93,9 +93,9 @@ model Order {
 
   shippingAddress String
 
-  createdAt DateTime @default(now())
-
   status OrderStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
 
   orderItems OrderItem[]
 }

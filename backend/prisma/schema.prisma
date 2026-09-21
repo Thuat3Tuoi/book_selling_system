@@ -5,7 +5,8 @@
 
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../src/generated/prisma"
+  moduleFormat = "esm"
 }
 
 datasource db {
@@ -108,9 +109,9 @@ model OrderItem {
   bookId Int
   book   Book @relation(fields: [bookId], references: [id])
 
-  quantity Int @default(1)
-
   unitPrice Decimal @db.Decimal(10, 2)
+
+  quantity Int @default(1)
 
   totalPrice Decimal @db.Decimal(10, 2)
 }

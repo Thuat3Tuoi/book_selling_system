@@ -10,4 +10,5 @@ export class UpdateBookDto {
     @IsOptional() @IsNumber() price?: number;
     @IsOptional() @IsNumber() @Min(0) stockQuantity?: number;
     @IsOptional() @IsString() coverImageUrl?: string;
+    @IsOptional() @IsString() status?: string;
 }

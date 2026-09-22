@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { PrismaService } from '../prisma/prisma.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateBookDto } from './dtos/book-create-request.dto.js';
 import { Prisma, type Book } from '../generated/prisma/client.js';
 import type { UpdateBookDto } from './dtos/book-update-request.dto.js';
@@ -13,16 +13,17 @@ export class BooksService {
             data: {
                 ...createBookDto,
                 price: new Prisma.Decimal(createBookDto.price),
+                status: "ACTIVE",
             },
         });
     };
 
     getBooks = async (): Promise<Book[]> => {
-        return this.prismaService.book.findMany(
+        return this.prismaService.book.findMany({
             where: {
                 status: "ACTIVE",
             },
-        );
+        });
     };
 
     getBookById = async (bookId: number): Promise<Book> => {
@@ -30,7 +31,7 @@ export class BooksService {
             where: { id: bookId },
         });
 
-        if (!book) {
+        if (!book || book.status !== "ACTIVE") {
             throw new NotFoundException("Không tìm thấy sách")
         }
 

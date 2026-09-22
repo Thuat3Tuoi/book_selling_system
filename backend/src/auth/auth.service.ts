@@ -1,102 +1,40 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import type { Response } from "express";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { RegisterDto } from "./dto/register.dto.js";
+
 import { LoginDto } from "./dto/login.dto.js";
+import { CreateUserDto } from "../user/dto/create-user.dto.js";
+import { UserService } from "../user/user.service.js";
 
 @Injectable()
 export class AuthService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly jwtService: JwtService
+        private readonly jwtService: JwtService,
+        private readonly userService: UserService
     ) {}
 
-    async register(dto: RegisterDto) {
-        const existingUser = await this.prisma.user.findUnique({
-            where: {
-                email: dto.email,
-            },
-        });
-
-        if (existingUser) {
-            throw new ConflictException("Email already exists");
-        }
-
-        const passwordHash = await bcrypt.hash(dto.password, 10);
-
-        const customerRole = await this.prisma.role.findUnique({
-            where: {
-                roleName: "CUSTOMER",
-            },
-        });
-
-        if (!customerRole) {
-            throw new ConflictException("CUSTOMER role not found");
-        }
-
-        const user = await this.prisma.user.create({
-            data: {
-                firstName: dto.firstName,
-                lastName: dto.lastName,
-                email: dto.email,
-                passwordHash,
-                phoneNumber: dto.phoneNumber,
-                address: dto.address,
-                roleId: customerRole.id,
-                status: true,
-            },
-        });
-
-        return {
-            message: "Register successfully",
-            user: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-            },
-        };
+    async register(dto: CreateUserDto) {
+        return this.userService.createUser(dto);
     }
 
-    async login(dto: LoginDto, res: Response) {
-        const user = await this.prisma.user.findUnique({
-            where: {
-                email: dto.email,
-            },
-            include: {
-                role: true,
-            },
-        });
+    async login(data: any) {
+        const user = await this.userService.findUserByEmail(data.email);
 
         if (!user) {
             throw new UnauthorizedException("Invalid email or password");
         }
-
-        const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
-
-        if (!isPasswordValid) {
-            throw new UnauthorizedException("Invalid email or password");
-        }
-
-        if (!user.status) {
-            throw new UnauthorizedException("User is inactive");
-        }
         // ACCESS TOKEN
 
-      const accessToken = await this.jwtService.signAsync(
-            {
-                sub: user.id,
-                email: user.email,
-                role: user.role.roleName,
-            },
-            {
-                expiresIn: "15m",
-            }
-        );
+        const accessToken = await this.jwtService.signAsync({
+            sub: user.id,
+            email: user.email,
+            role: user.roleId,
+        });
         // REFRESH TOKEN
-      const refreshToken = await this.jwtService.signAsync(
+        const refreshToken = await this.jwtService.signAsync(
             {
                 sub: user.id,
             },
@@ -114,28 +52,27 @@ export class AuthService {
                 expires: new Date(Date.now() + refreshTokenTtl),
             },
         });
-        // COOKIE
-        if (res) {
-            res.cookie("refreshToken", refreshToken, {
-                httpOnly: true,
-                secure: true,
-                sameSite: "none",
-                maxAge: refreshTokenTtl,
-            });
-        }
+        // // COOKIE
+        // if (res) {
+        //     res.cookie("refreshToken", refreshToken, {
+        //         httpOnly: true,
+        //         secure: true,
+        //         sameSite: "none",
+        //         maxAge: refreshTokenTtl,
+        //     });
+        // }
 
         return {
-            message: "Login successfully",
-
             accessToken,
-
-            user: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                role: user.role.roleName,
-            },
         };
+    }
+
+    async verifyRefreshToken(ref: string) {
+        try {
+            const decode = await this.jwtService.verifyAsync(ref);
+            return this.userService.verifyRefreshToken(ref, decode.sub);
+        } catch {
+            return false;
+        }
     }
 }

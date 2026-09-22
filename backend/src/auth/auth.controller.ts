@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
-import type { Request, Response } from "express";
+import { BadRequestException, Body, Controller, Get, Post, Req, Request, Res, UseGuards } from "@nestjs/common";
 import { AuthService } from "./auth.service.js";
-import { RegisterDto } from "./dto/register.dto.js";
 import { LoginDto } from "./dto/login.dto.js";
+import { CreateUserDto } from "../user/dto/create-user.dto.js";
+
+import { LocalAuthGuard } from "../guards/local-auth.guard.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
+
 
 
 
@@ -11,17 +13,31 @@ import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
 export class AuthController {
     constructor(private readonly authService: AuthService) {}
     @Post("register")
-    register(@Body() dto: RegisterDto) {
+    register(@Body() dto: CreateUserDto) {
         return this.authService.register(dto);
     }
+
+    @UseGuards(LocalAuthGuard)
     @Post("login")
-    login(@Body() dto: LoginDto, @Res() res: Response) {
-        return this.authService.login(dto, res);
+    login(@Request() req: any) {
+        return this.authService.login(req.user);
+    }
+
+    @Post("refresh-token")
+    async refreshToken(@Body() { refreshToken }: { refreshToken : string}) {
+        if(!refreshToken) {
+            throw new BadRequestException("Refresh Token is required")
+        }
+        const user = await this.authService.verifyRefreshToken(refreshToken)
+        if(!user) {
+            throw new BadRequestException("Refresh Token is invalid");
+        }
+        return this.authService.login(user)
     }
 
     @UseGuards(JwtAuthGuard)
-    @Get("me")
-    getMe(@Req() req: Request) {
+    @Get("profile")
+    getProfile(@Request() req: any) {
         return req.user;
     }
 }

@@ -6,6 +6,7 @@ import { NotificationsModule } from "./notifications/notifications.module.js";
 import { OrdersModule } from "./orders/orders.module.js";
 import { AuthModule } from './auth/auth.module.js';
 import { PrismaModule } from "./prisma/prisma.module.js";
+import { UserModule } from './user/user.module.js';
 
 @Module({
     imports: [
@@ -14,6 +15,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
         OrdersModule,
         NotificationsModule,
         AuthModule,
+        UserModule,
     ],
     controllers: [AppController],
     providers: [AppService],

@@ -64,6 +64,7 @@ model Book {
   price         Decimal  @db.Decimal(10, 2)
   stockQuantity Int      @default(0)
   coverImageUrl String
+  status        String @default("ACTIVE")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

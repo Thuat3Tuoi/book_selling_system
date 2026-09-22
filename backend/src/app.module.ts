@@ -6,6 +6,8 @@ import { NotificationsModule } from "./notifications/notifications.module.js";
 import { OrdersModule } from "./orders/orders.module.js";
 import { AuthModule } from './auth/auth.module.js';
 import { PrismaModule } from "./prisma/prisma.module.js";
+import { BooksModule } from './books/books.module.js';
+import { CartsModule } from './carts/carts.module.js';
 import { UserModule } from './user/user.module.js';
 
 @Module({
@@ -15,6 +17,8 @@ import { UserModule } from './user/user.module.js';
         OrdersModule,
         NotificationsModule,
         AuthModule,
+        BooksModule,
+        CartsModule,
         UserModule,
     ],
     controllers: [AppController],

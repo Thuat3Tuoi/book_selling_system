@@ -1,9 +1,9 @@
-import { Controller, Post, Body, Get, Param, ParseIntPipe, Patch, Delete } from '@nestjs/common';
-import { BooksService } from './books.service.js';
-import type { CreateBookDto } from './dtos/book-create-request.dto.js';
-import type { UpdateBookDto } from './dtos/book-update-request.dto.js';
+import { Controller, Post, Body, Get, Param, ParseIntPipe, Patch, Delete } from "@nestjs/common";
+import { BooksService } from "./books.service.js";
+import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
+import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
 
-@Controller('books')
+@Controller("books")
 export class BooksController {
     constructor(private readonly booksService: BooksService) {}
 
@@ -13,7 +13,7 @@ export class BooksController {
     }
 
     @Get()
-    getBooks(){
+    getBooks() {
         return this.booksService.getBooks();
     }
 
@@ -23,13 +23,10 @@ export class BooksController {
     }
 
     @Patch(":id")
-    updateBook(
-        @Param("id", ParseIntPipe) id: number,
-        @Body() updateBookDto: UpdateBookDto
-    ) {
+    updateBook(@Param("id", ParseIntPipe) id: number, @Body() updateBookDto: UpdateBookDto) {
         return this.booksService.updateBook(id, updateBookDto);
     }
-    
+
     @Delete()
     deleteBook(@Param("id", ParseIntPipe) id: number) {
         return this.booksService.deleteBook(id);

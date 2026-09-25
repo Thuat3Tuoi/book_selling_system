@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service.js';
-import type { Cart, CartItem } from '../generated/prisma/client.js';
-import type { AddToCartDto } from './dtos/cart-add-request.dto.js';
-import { UpdateCartItemDto } from './dtos/cart-update-request.dto.js';
-import { NotFoundError } from 'rxjs';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service.js";
+import type { Cart, CartItem } from "../generated/prisma/client.js";
+import type { AddToCartDto } from "./dtos/cart-add-request.dto.js";
+import { UpdateCartItemDto } from "./dtos/cart-update-request.dto.js";
+import { NotFoundError } from "rxjs";
 
 @Injectable()
 export class CartsService {
@@ -21,7 +21,7 @@ export class CartsService {
             },
         });
 
-        if(!cart){
+        if (!cart) {
             cart = await this.prismaService.cart.create({
                 data: { userId },
                 include: {
@@ -37,10 +37,7 @@ export class CartsService {
         return cart;
     };
 
-    addToCart = async (
-        userId: number,
-        addToCartDto: AddToCartDto
-    ): Promise<CartItem> => {
+    addToCart = async (userId: number, addToCartDto: AddToCartDto): Promise<CartItem> => {
         const cart = await this.getCartById(userId);
 
         const existingItem = await this.prismaService.cartItem.findUnique({
@@ -70,7 +67,6 @@ export class CartsService {
         });
     };
 
-
     updateCartItemQuantity = async (
         cartItemId: number,
         updateCartItemDto: UpdateCartItemDto
@@ -91,7 +87,6 @@ export class CartsService {
         });
     };
 
-
     removeCartItem = async (cartItemId: number): Promise<CartItem> => {
         const cartItem = await this.prismaService.cartItem.findUnique({
             where: { id: cartItemId },
@@ -105,5 +100,4 @@ export class CartsService {
             where: { id: cartItemId },
         });
     };
-
 }

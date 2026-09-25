@@ -3,7 +3,6 @@ import type { NotificationCreationRequest } from "./dtos/notification-creation-r
 import type { Notification } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 
-
 @Injectable()
 export class NotificationsService {
     constructor(private prismaService: PrismaService) {}

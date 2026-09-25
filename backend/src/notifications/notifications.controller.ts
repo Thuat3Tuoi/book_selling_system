@@ -13,7 +13,7 @@ export class NotificationsController {
     }
 
     @Get(":id")
-    getNotificationById(@Param("id", ParseIntPipe) notificationId: number ): Promise<Notification> {
+    getNotificationById(@Param("id", ParseIntPipe) notificationId: number): Promise<Notification> {
         return this.notificationService.getNotificationById(notificationId);
     }
 

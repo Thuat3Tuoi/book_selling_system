@@ -11,7 +11,7 @@ describe("NotificationsController", () => {
             providers: [
                 {
                     provide: NotificationsService,
-                    useValue: {}, 
+                    useValue: {},
                 },
             ],
         }).compile();

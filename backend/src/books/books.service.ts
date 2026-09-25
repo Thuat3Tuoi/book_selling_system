@@ -1,14 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service.js';
-import type { CreateBookDto } from './dtos/book-create-request.dto.js';
-import { Prisma, type Book } from '../generated/prisma/client.js';
-import type { UpdateBookDto } from './dtos/book-update-request.dto.js';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service.js";
+import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
+import { Prisma, type Book } from "../generated/prisma/client.js";
+import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
 
 @Injectable()
 export class BooksService {
     constructor(private prismaService: PrismaService) {}
 
-    createBook = async (createBookDto: CreateBookDto): Promise<Book> =>{
+    createBook = async (createBookDto: CreateBookDto): Promise<Book> => {
         return this.prismaService.book.create({
             data: {
                 ...createBookDto,
@@ -32,16 +32,13 @@ export class BooksService {
         });
 
         if (!book || book.status !== "ACTIVE") {
-            throw new NotFoundException("Không tìm thấy sách")
+            throw new NotFoundException("Không tìm thấy sách");
         }
 
         return book;
     };
 
-    updateBook = async (
-        bookId: number,
-        updateBookDto: UpdateBookDto
-    ): Promise<Book> => {
+    updateBook = async (bookId: number, updateBookDto: UpdateBookDto): Promise<Book> => {
         await this.getBookById(bookId);
 
         const data: Prisma.BookUpdateInput = {
@@ -54,7 +51,7 @@ export class BooksService {
         return this.prismaService.book.update({
             where: { id: bookId },
             data,
-        })
+        });
     };
 
     deleteBook = async (bookId: number): Promise<Book> => {
@@ -64,7 +61,7 @@ export class BooksService {
             where: { id: bookId },
             data: {
                 status: "INACTIVE",
-            }
+            },
         });
     };
 }

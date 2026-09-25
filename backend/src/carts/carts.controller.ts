@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
-import { CartsService } from './carts.service.js';
-import type { AddToCartDto } from './dtos/cart-add-request.dto.js';
-import type { UpdateCartItemDto } from './dtos/cart-update-request.dto.js';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from "@nestjs/common";
+import { CartsService } from "./carts.service.js";
+import type { AddToCartDto } from "./dtos/cart-add-request.dto.js";
+import type { UpdateCartItemDto } from "./dtos/cart-update-request.dto.js";
 
-@Controller('carts')
+@Controller("carts")
 export class CartsController {
     constructor(private readonly cartsService: CartsService) {}
 
@@ -13,10 +13,7 @@ export class CartsController {
     }
 
     @Post(":userId/items")
-    addToCart(
-        @Param("userId", ParseIntPipe) userId: number,
-        @Body() addToCartDto: AddToCartDto
-    ) {
+    addToCart(@Param("userId", ParseIntPipe) userId: number, @Body() addToCartDto: AddToCartDto) {
         return this.cartsService.addToCart(userId, addToCartDto);
     }
 
@@ -32,5 +29,4 @@ export class CartsController {
     removeCartItem(@Param("itemId", ParseIntPipe) itemId: number) {
         return this.cartsService.removeCartItem(itemId);
     }
-
 }

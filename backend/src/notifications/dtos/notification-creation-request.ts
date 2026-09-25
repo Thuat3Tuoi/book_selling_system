@@ -1,10 +1,10 @@
-import { IsNotEmpty } from 'class-validator';
+import { IsNotEmpty } from "class-validator";
 
 export class NotificationCreationRequest {
-    notifyType!: string
-    
-    userId!: number
+    notifyType!: string;
+
+    userId!: number;
 
     @IsNotEmpty()
-    message!: string
+    message!: string;
 }

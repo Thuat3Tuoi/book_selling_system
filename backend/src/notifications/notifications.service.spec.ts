@@ -11,7 +11,7 @@ describe("NotificationsService", () => {
                 NotificationsService,
                 {
                     provide: PrismaService,
-                    useValue: {}, 
+                    useValue: {},
                 },
             ],
         }).compile();

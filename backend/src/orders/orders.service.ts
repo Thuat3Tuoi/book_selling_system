@@ -1,48 +1,71 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import type { OrderCreaterRequest } from "./dtos/order-creater-request.dto.js";
+import type { OrderCreaterRequest } from "./dtos/order-creation-request.dto.js";
 import { OrderStatus, Prisma, type Order } from "../generated/prisma/client.js";
 import type { OrderUpdateRequest } from "./dtos/order-update-request.dto.js";
 import type { OrderUpdateStatusRequest } from "./dtos/order-update-status-request.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { BooksService } from "../books/books.service.js";
 
 @Injectable()
 export class OrdersService {
-    constructor(private prismaService: PrismaService) {}
+    constructor(
+        private prismaService: PrismaService,
+        private bookService: BooksService
+    ) {}
 
     createOrder = async (orderCreateRequest: OrderCreaterRequest): Promise<Order> => {
-        let orderItems = orderCreateRequest.orderItems;
+        // 1. lấy thông tin sách
+        const books = await this.prismaService.book.findMany({
+            where: {
+                id: {
+                    in: orderCreateRequest.orderItems.map((item) => item.bookId),
+                },
+            },
+        });
 
-        orderItems.forEach(
-            (orderItem) =>
-                (orderItem.totalPrice = new Prisma.Decimal(orderItem.unitPrice).mul(
-                    orderItem.quantity
-                ))
-        );
+        // 2. Tạo dữ liệu OrderItem và tính tiền
+        const orderItems = orderCreateRequest.orderItems.map((orderItem) => {
+            const book = books.find((book) => (book.id = orderItem.bookId));
 
+            if (!book) {
+                throw new NotFoundException(`Không tìm thấy sách ${orderItem.bookId}`);
+            }
+
+            return {
+                bookId: orderItem.bookId,
+                unitPrice: book.price,
+                quantity: orderItem.quantity,
+                totalPrice: book.price.mul(orderItem.quantity),
+            };
+        });
+
+        // 3. Tính tổng tiền Order
         const totalAmount = orderItems.reduce((total, orderItem) => {
             return total.plus(orderItem.totalPrice);
         }, new Prisma.Decimal(0));
 
+        // 4. Lưu Order và OrderItem và trừ số lượng kho
         return this.prismaService.$transaction(async (tx) => {
             // 1. tạo dơn hàng
-            const order = tx.order.create({
+            const order = await tx.order.create({
                 data: {
                     userId: orderCreateRequest.userId,
                     totalAmount,
                     shippingAddress: orderCreateRequest.shippingAddress,
                     status: OrderStatus.PENDING,
                     orderItems: {
-                        create: orderItems.map((orderItem) => ({
-                            bookId: orderItem.bookId,
-                            unitPrice: orderItem.unitPrice,
-                            quantity: orderItem.quantity,
-                            totalPrice: orderItem.totalPrice,
-                        })),
+                        create: orderItems,
                     },
+                },
+                include: {
+                    orderItems: true,
                 },
             });
 
             // 2. Trừ số lượng kho
+            for (const orderItem of orderItems) {
+                await this.bookService.reduceBookStock(tx, orderItem.bookId, orderItem.quantity);
+            }
 
             return order;
         });

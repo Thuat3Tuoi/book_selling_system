@@ -64,4 +64,17 @@ export class BooksService {
             },
         });
     };
+
+    reduceBookStock = async (tx: Prisma.TransactionClient, bookId: number, quantity: number) => {
+        return await tx.book.update({
+            where: {
+                id: bookId,
+            },
+            data: {
+                stockQuantity: {
+                    decrement: quantity,
+                },
+            },
+        });
+    };
 }

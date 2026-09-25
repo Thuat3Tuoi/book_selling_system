@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from "@nestjs/common";
 import type { Order } from "../generated/prisma/client.js";
-import type { OrderCreaterRequest } from "./dtos/order-creater-request.dto.js";
+import type { OrderCreaterRequest } from "./dtos/order-creation-request.dto.js";
 import { OrdersService } from "./orders.service.js";
 import type { OrderUpdateRequest } from "./dtos/order-update-request.dto.js";
 import type { OrderUpdateStatusRequest } from "./dtos/order-update-status-request.js";

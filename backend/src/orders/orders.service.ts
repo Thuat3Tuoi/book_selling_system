@@ -25,7 +25,7 @@ export class OrdersService {
 
         // 2. Tạo dữ liệu OrderItem và tính tiền
         const orderItems = orderCreateRequest.orderItems.map((orderItem) => {
-            const book = books.find((book) => (book.id = orderItem.bookId));
+            const book = books.find((book) => (book.id === orderItem.bookId));
 
             if (!book) {
                 throw new NotFoundException(`Không tìm thấy sách ${orderItem.bookId}`);

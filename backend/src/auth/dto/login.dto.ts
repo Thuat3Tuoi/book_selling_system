@@ -7,10 +7,4 @@ export class LoginDto {
     @IsNotEmpty()
     @MinLength(6)
     password: string;
-
-    @IsNotEmpty()
-    phoneNumber: string;
-
-    @IsNotEmpty()
-    address: string;
 }

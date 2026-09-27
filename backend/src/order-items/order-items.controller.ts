@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe } from "@nestjs/common";
 import { OrderItemsService } from "./order-items.service.js";
 import type { OrderItem } from "../generated/prisma/browser.js";
 
@@ -12,7 +12,7 @@ export class OrderItemsController {
     }
 
     @Get(":id")
-    getOrderItemById(orderItemId: number): Promise<OrderItem> {
+    getOrderItemById(@Param("id", ParseIntPipe) orderItemId: number): Promise<OrderItem> {
         return this.orderItemsService.getOrderItemsById(orderItemId);
     }
 }

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { CreateUserDto } from "./dto/create-user.dto.js";
 import * as bcrypt from "bcrypt";
@@ -39,6 +39,21 @@ export class UserService {
             },
         });
     }
+
+    // Thêm mới: dùng cho GET /user/me — trả user theo id, không kèm passwordHash
+    async findUserById(id: number) {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+        });
+
+        if (!user) {
+            throw new NotFoundException("User not found");
+        }
+
+        const { passwordHash, ...safeUser } = user;
+        return safeUser;
+    }
+
     async validateUser(email: string, password: string) {
         const user = await this.prisma.user.findUnique({
             where: {

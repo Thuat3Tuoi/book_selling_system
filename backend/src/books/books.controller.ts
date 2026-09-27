@@ -17,7 +17,7 @@ export class BooksController {
         return this.booksService.getBooks();
     }
 
-    @Get()
+    @Get(":id")
     getBookById(@Param("id", ParseIntPipe) id: number) {
         return this.booksService.getBookById(id);
     }
@@ -27,7 +27,7 @@ export class BooksController {
         return this.booksService.updateBook(id, updateBookDto);
     }
 
-    @Delete()
+    @Delete(":id")
     deleteBook(@Param("id", ParseIntPipe) id: number) {
         return this.booksService.deleteBook(id);
     }

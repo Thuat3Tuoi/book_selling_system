@@ -1,65 +1,62 @@
-import Image from "next/image";
+import { api } from "@/lib/api";
+import type { Book } from "@/lib/types";
+import BookCard from "@/components/BookCard";
 
-export default function Home() {
+export default async function Home() {
+  let books: Book[] = [];
+  let loadError = false;
+
+  try {
+    books = await api.getBooks();
+  } catch {
+    loadError = true;
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            Duong Van Thuat
+    <div className="flex flex-1 flex-col">
+      <section className="border-b border-[#E4DCC8] bg-[#FAF6EE]">
+        <div className="mx-auto max-w-5xl px-6 py-16">
+          <h1 className="max-w-lg font-serif text-4xl font-medium leading-tight text-[#1F2321]">
+            Đọc sách mỗi ngày, giao tận cửa mỗi tuần.
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-4 max-w-md text-[#1F2321]/70">
+            Chọn từ kho sách đang có sẵn, thêm vào giỏ và đặt hàng chỉ trong
+            vài bước.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      <section className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
+        <div className="mb-6 flex items-baseline justify-between">
+          <h2 className="font-serif text-2xl font-medium text-[#1F2321]">
+            Sách đang có
+          </h2>
+          <span className="text-sm text-[#1F2321]/50">
+            {books.length} cuốn
+          </span>
         </div>
-      </main>
+
+        {loadError && (
+          <p className="rounded-sm border border-[#E4DCC8] bg-white p-4 text-sm text-[#1F2321]/70">
+            Không tải được danh sách sách. Kiểm tra backend có đang chạy ở
+            đúng địa chỉ <code>NEXT_PUBLIC_API_URL</code> không.
+          </p>
+        )}
+
+        {!loadError && books.length === 0 && (
+          <p className="rounded-sm border border-[#E4DCC8] bg-white p-4 text-sm text-[#1F2321]/70">
+            Chưa có sách nào trong kho.
+          </p>
+        )}
+
+        {books.length > 0 && (
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+            {books.map((book) => (
+              <BookCard key={book.id} book={book} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

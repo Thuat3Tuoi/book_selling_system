@@ -1,50 +1,58 @@
 "use client";
-
-import { useState, FormEvent } from "react";
-import Link from "next/link";
+import { z } from "zod";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+import { useAuthStore } from "@/stores/auth.store";
+
+import Link from "next/link";
+
+export const registerSchema = z.object({
+  firstName: z.string().trim().min(1, "Tên không được để trống"),
+  lastName: z.string().trim().min(1, "Họ không được để trống"),
+  email: z.string().trim().email("Email không hợp lệ"),
+  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
+  phoneNumber: z.string().trim().optional(),
+  address: z.string().trim().optional(),
+});
+
+export type RegisterData = z.infer<typeof registerSchema>;
+
+
 
 export default function RegisterPage() {
   const router = useRouter();
 
-  const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    password: "",
-    phoneNumber: "",
-    address: "",
+  const registerUser = useAuthStore((state) => state.register);
+  const isLoading = useAuthStore((state) => state.loading);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<RegisterData>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      password: "",
+      phoneNumber: "",
+      address: "",
+    },
   });
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function update<K extends keyof typeof form>(key: K, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
+  const onSubmit = async (data: RegisterData) => {
     try {
-      await api.register({
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        password: form.password,
-        phoneNumber: form.phoneNumber || undefined,
-        address: form.address || undefined,
-      });
-      router.push("/login?registered=1");
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Đăng ký thất bại, thử lại."
-      );
-    } finally {
-      setIsSubmitting(false);
+      await registerUser(data);
+
+      // Đăng ký thành công
+      router.push("/login");
+    } catch {
+      // Error đã được Zustand lưu
     }
-  }
+  };
 
   return (
     <div className="flex flex-1 items-center justify-center bg-[#FAF6EE] px-6 py-16">
@@ -52,6 +60,7 @@ export default function RegisterPage() {
         <h1 className="font-serif text-2xl font-medium text-[#1F2321]">
           Tạo tài khoản
         </h1>
+
         <p className="mt-1 text-sm text-[#1F2321]/60">
           Đã có tài khoản?{" "}
           <Link href="/login" className="text-[#2F4B3C] hover:underline">
@@ -59,79 +68,94 @@ export default function RegisterPage() {
           </Link>
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="mt-8 flex flex-col gap-4"
+        >
+          {/* Họ + Tên */}
           <div className="flex gap-3">
-            <label className="flex flex-1 flex-col gap-1.5 text-sm text-[#1F2321]">
+            <label className="flex flex-1 flex-col gap-1.5 text-sm">
               Họ
               <input
-                required
-                value={form.lastName}
-                onChange={(e) => update("lastName", e.target.value)}
+                {...register("lastName")}
                 className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
               />
+              {errors.lastName && (
+                <span className="text-xs text-red-600">
+                  {errors.lastName.message}
+                </span>
+              )}
             </label>
-            <label className="flex flex-1 flex-col gap-1.5 text-sm text-[#1F2321]">
+
+            <label className="flex flex-1 flex-col gap-1.5 text-sm">
               Tên
               <input
-                required
-                value={form.firstName}
-                onChange={(e) => update("firstName", e.target.value)}
+                {...register("firstName")}
                 className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
               />
+              {errors.firstName && (
+                <span className="text-xs text-red-600">
+                  {errors.firstName.message}
+                </span>
+              )}
             </label>
           </div>
 
-          <label className="flex flex-col gap-1.5 text-sm text-[#1F2321]">
+          {/* Email */}
+          <label className="flex flex-col gap-1.5 text-sm">
             Email
             <input
               type="email"
-              required
-              value={form.email}
-              onChange={(e) => update("email", e.target.value)}
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
+              {...register("email")}
               placeholder="ban@vidu.com"
+              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
             />
+            {errors.email && (
+              <span className="text-xs text-red-600">
+                {errors.email.message}
+              </span>
+            )}
           </label>
 
-          <label className="flex flex-col gap-1.5 text-sm text-[#1F2321]">
+          {/* Password */}
+          <label className="flex flex-col gap-1.5 text-sm">
             Mật khẩu
             <input
               type="password"
-              required
-              minLength={6}
-              value={form.password}
-              onChange={(e) => update("password", e.target.value)}
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
+              {...register("password")}
               placeholder="Ít nhất 6 ký tự"
+              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
             />
+            {errors.password && (
+              <span className="text-xs text-red-600">
+                {errors.password.message}
+              </span>
+            )}
           </label>
 
-          <label className="flex flex-col gap-1.5 text-sm text-[#1F2321]">
+          {/* Phone */}
+          <label className="flex flex-col gap-1.5 text-sm">
             Số điện thoại (không bắt buộc)
             <input
-              value={form.phoneNumber}
-              onChange={(e) => update("phoneNumber", e.target.value)}
+              {...register("phoneNumber")}
               className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
             />
           </label>
 
-          <label className="flex flex-col gap-1.5 text-sm text-[#1F2321]">
+          {/* Address */}
+          <label className="flex flex-col gap-1.5 text-sm">
             Địa chỉ (không bắt buộc)
             <input
-              value={form.address}
-              onChange={(e) => update("address", e.target.value)}
+              {...register("address")}
               className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
             />
           </label>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isLoading}
             className="mt-2 rounded-full bg-[#2F4B3C] px-4 py-2.5 text-sm font-medium text-[#FAF6EE] transition-colors hover:bg-[#26392E] disabled:opacity-60"
           >
-            {isSubmitting ? "Đang tạo..." : "Tạo tài khoản"}
+            {isLoading ? "Đang tạo..." : "Tạo tài khoản"}
           </button>
         </form>
       </div>

@@ -4,7 +4,6 @@ import * as bcrypt from "bcrypt";
 import type { Response } from "express";
 import { PrismaService } from "../prisma/prisma.service.js";
 
-import { LoginDto } from "./dto/login.dto.js";
 import { CreateUserDto } from "../user/dto/create-user.dto.js";
 import { UserService } from "../user/user.service.js";
 
@@ -20,7 +19,7 @@ export class AuthService {
         return this.userService.createUser(dto);
     }
 
-    async login(data: any) {
+    async login(data: any, res?: Response) {
         const user = await this.userService.findUserByEmail(data.email);
 
         if (!user) {
@@ -52,18 +51,26 @@ export class AuthService {
                 expires: new Date(Date.now() + refreshTokenTtl),
             },
         });
-        // // COOKIE
-        // if (res) {
-        //     res.cookie("refreshToken", refreshToken, {
-        //         httpOnly: true,
-        //         secure: true,
-        //         sameSite: "none",
-        //         maxAge: refreshTokenTtl,
-        //     });
-        // }
+
+
+        res?.cookie("refreshToken", refreshToken, {
+            httpOnly: true,
+            secure: true,
+            sameSite: "none",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
 
         return {
             accessToken,
+            user: {
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phone: user.phoneNumber,
+                address: user.address,
+                roleId: user.roleId,
+            },
         };
     }
 
@@ -74,5 +81,17 @@ export class AuthService {
         } catch {
             return false;
         }
+    }
+
+    async logout(refreshToken: string) {
+        await this.prisma.session.deleteMany({
+            where: {
+                ref: refreshToken,
+            },
+        });
+
+        return {
+            message: "Logout successful",
+        };
     }
 }

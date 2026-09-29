@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
-import { useCart } from "@/context/CartContext";
+import { useAuthStore } from "@/stores/auth.store";
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
-  const { totalItems } = useCart();
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
 
   return (
     <header className="border-b border-[#E4DCC8] bg-[#FAF6EE]">
@@ -22,13 +21,9 @@ export default function Navbar() {
           <Link href="/products" className="hover:text-[#2F4B3C]">
             Sách
           </Link>
+
           <Link href="/orders" className="relative hover:text-[#2F4B3C]">
             Giỏ hàng
-            {totalItems > 0 && (
-              <span className="absolute -right-3 -top-2 rounded-full bg-[#C99A3B] px-1.5 py-0.5 text-[10px] font-medium text-white">
-                {totalItems}
-              </span>
-            )}
           </Link>
 
           {user ? (
@@ -36,6 +31,7 @@ export default function Navbar() {
               <span className="text-[#1F2321]/70">
                 Xin chào, {user.firstName} {user.lastName}
               </span>
+
               <button
                 onClick={logout}
                 className="rounded-full border border-[#1F2321]/20 px-3 py-1.5 hover:bg-[#1F2321]/5"
@@ -51,6 +47,7 @@ export default function Navbar() {
               >
                 Đăng nhập
               </Link>
+
               <Link
                 href="/register"
                 className="rounded-full bg-[#2F4B3C] px-3 py-1.5 text-[#FAF6EE] hover:bg-[#26392E]"

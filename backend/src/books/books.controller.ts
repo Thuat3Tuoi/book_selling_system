@@ -1,7 +1,8 @@
-import { Controller, Post, Body, Get, Param, ParseIntPipe, Patch, Delete } from "@nestjs/common";
+import { Controller, Post, Body, Get, Param, ParseIntPipe, Patch, Delete, UseGuards } from "@nestjs/common";
 import { BooksService } from "./books.service.js";
 import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
 import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
+import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
 
 @Controller("books")
 export class BooksController {
@@ -12,6 +13,7 @@ export class BooksController {
         return this.booksService.createBook(createBookDto);
     }
 
+    @UseGuards(JwtAuthGuard)
     @Get()
     getBooks() {
         return this.booksService.getBooks();

@@ -4,32 +4,14 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Book } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
-import { useAuth } from "@/context/AuthContext";
-import { useCart } from "@/context/CartContext";
 
 export default function BookCard({ book }: { book: Book }) {
-  const { user } = useAuth();
-  const { addToCart } = useCart();
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">(
     "idle"
   );
 
   const outOfStock = book.stockQuantity <= 0;
 
-  async function handleAdd() {
-    if (!user) {
-      window.location.href = "/login";
-      return;
-    }
-    setStatus("loading");
-    try {
-      await addToCart(book.id, 1);
-      setStatus("done");
-      setTimeout(() => setStatus("idle"), 1500);
-    } catch {
-      setStatus("error");
-    }
-  }
 
   return (
     <div className="flex flex-col overflow-hidden rounded-sm border border-[#E4DCC8] bg-white">
@@ -56,7 +38,7 @@ export default function BookCard({ book }: { book: Book }) {
             {formatPrice(book.price)}
           </span>
           <button
-            onClick={handleAdd}
+            // onClick={handleAdd}
             disabled={outOfStock || status === "loading"}
             className="rounded-full bg-[#2F4B3C] px-3 py-1.5 text-xs font-medium text-[#FAF6EE] transition-colors hover:bg-[#26392E] disabled:cursor-not-allowed disabled:bg-[#1F2321]/20"
           >

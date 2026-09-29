@@ -7,7 +7,7 @@ import type { UpdateCartItemDto } from "./dtos/cart-update-request.dto.js";
 export class CartsController {
     constructor(private readonly cartsService: CartsService) {}
 
-    @Get()
+    @Get(":id")
     getCartById(@Param("userId", ParseIntPipe) userId: number) {
         return this.cartsService.getCartById(userId);
     }

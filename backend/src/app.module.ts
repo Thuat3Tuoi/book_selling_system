@@ -11,7 +11,7 @@ import { CartsModule } from "./carts/carts.module.js";
 import { UserModule } from "./user/user.module.js";
 import { APP_INTERCEPTOR } from "@nestjs/core";
 import { LoggingInterceptor } from "./common/interceptors/logging.interceptor.js";
-import { OrderItemsModule } from './order-items/order-items.module.js';
+import { OrderItemsModule } from "./order-items/order-items.module.js";
 
 @Module({
     imports: [

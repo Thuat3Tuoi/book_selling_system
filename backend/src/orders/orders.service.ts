@@ -1,16 +1,18 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { OrderCreaterRequest } from "./dtos/order-creation-request.dto.js";
 import { OrderStatus, Prisma, type Order } from "../generated/prisma/client.js";
 import type { OrderUpdateRequest } from "./dtos/order-update-request.dto.js";
 import type { OrderUpdateStatusRequest } from "./dtos/order-update-status-request.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { BooksService } from "../books/books.service.js";
+import type { ClientProxy } from "@nestjs/microservices";
 
 @Injectable()
 export class OrdersService {
     constructor(
         private prismaService: PrismaService,
-        private bookService: BooksService
+        private bookService: BooksService,
+        @Inject("RABBITMQ") private readonly rabbitmq: ClientProxy
     ) {}
 
     createOrder = async (orderCreateRequest: OrderCreaterRequest): Promise<Order> => {
@@ -66,6 +68,9 @@ export class OrdersService {
             for (const orderItem of orderItems) {
                 await this.bookService.reduceBookStock(tx, orderItem.bookId, orderItem.quantity);
             }
+
+            console.log("send message to queue...");
+            this.rabbitmq.emit("order.created", order);
 
             return order;
         });

@@ -12,6 +12,8 @@ import { UserModule } from "./user/user.module.js";
 import { APP_INTERCEPTOR } from "@nestjs/core";
 import { LoggingInterceptor } from "./common/interceptors/logging.interceptor.js";
 import { OrderItemsModule } from "./order-items/order-items.module.js";
+import { ScheduleModule } from "@nestjs/schedule";
+import { CronJobModule } from "./infrastructure/cron-job/cron-job.module.js";
 
 @Module({
     imports: [
@@ -24,6 +26,8 @@ import { OrderItemsModule } from "./order-items/order-items.module.js";
         CartsModule,
         UserModule,
         OrderItemsModule,
+        ScheduleModule.forRoot(),
+        CronJobModule,
     ],
     controllers: [AppController],
     providers: [AppService, { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],

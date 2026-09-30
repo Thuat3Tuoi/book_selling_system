@@ -77,4 +77,14 @@ export class BooksService {
             },
         });
     };
+
+    getLowStockBook = async () => {
+        return this.prismaService.book.findMany({
+            where: {
+                stockQuantity: {
+                    lte: 10,
+                },
+            },
+        });
+    };
 }

@@ -27,9 +27,8 @@ async function bootstrap() {
             prefetchCount: 10,
         },
     });
-
     await app.startAllMicroservices();
-    await app.listen(process.env.PORT ?? 3000);
+
     app.useGlobalPipes(
         new ValidationPipe({
             whitelist: true,
@@ -37,7 +36,9 @@ async function bootstrap() {
             transform: true,
         })
     );
+
     app.use(cookieParser());
+
     app.enableCors({
         origin: "http://localhost:3000",
         credentials: true,

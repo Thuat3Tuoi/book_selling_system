@@ -20,7 +20,7 @@ export class CronJobService {
 
         if (books.length === 0) {
             console.log("No low stock book");
-            this.notificationsService.createNotification({
+            await this.notificationsService.createNotification({
                 notifyType: "INFO",
                 userId: 1,
                 message: "No low stock book",
@@ -29,7 +29,7 @@ export class CronJobService {
 
         // business logic
         console.log("Has low stock books...");
-        this.notificationsService.createNotification({
+        await this.notificationsService.createNotification({
             notifyType: "INFO",
             userId: 1,
             message: JSON.stringify(books),

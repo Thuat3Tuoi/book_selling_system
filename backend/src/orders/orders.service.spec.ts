@@ -12,6 +12,10 @@ describe("OrdersService", () => {
             providers: [OrdersService, 
                 { provide: PrismaService, useValue: {} },
                 { provide: BooksService, useValue: {} },
+                {
+                    provide: 'RABBITMQ',
+                    useValue: { emit: vi.fn(), send: vi.fn() },
+                },
             ],
         }).compile();
 

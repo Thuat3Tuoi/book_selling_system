@@ -15,6 +15,7 @@ import { OrderItemsModule } from "./order-items/order-items.module.js";
 import { ScheduleModule } from "@nestjs/schedule";
 import { CronJobModule } from "./infrastructure/cron-job/cron-job.module.js";
 import { SearchModule } from './search/search.module.js';
+import { RedisModule } from "./redis/redis.module.js";
 
 @Module({
     imports: [
@@ -30,6 +31,7 @@ import { SearchModule } from './search/search.module.js';
         ScheduleModule.forRoot(),
         CronJobModule,
         SearchModule,
+        RedisModule
     ],
     controllers: [AppController],
     providers: [AppService, { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],

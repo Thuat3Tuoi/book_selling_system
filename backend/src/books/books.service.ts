@@ -1,19 +1,33 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+
 import { PrismaService } from "../prisma/prisma.service.js";
+
 import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
+
 import { Prisma, type Book } from "../generated/prisma/client.js";
+
 import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
+
 import { SearchService } from "../search/search.service.js";
-import type { Decimal } from "@prisma/client/runtime/client";
+
+import { RedisService } from "../redis/redis.service.js";
 
 @Injectable()
 export class BooksService {
     private readonly logger = new Logger(BooksService.name);
 
+    // Cache tồn tại 5 phút
+    private readonly CACHE_TTL = 300;
+
     constructor(
-        private prismaService: PrismaService,
-        private searchService: SearchService,
+        private readonly prismaService: PrismaService,
+        private readonly searchService: SearchService,
+        private readonly redis: RedisService
     ) {}
+
+    // =========================
+    // CREATE BOOK
+    // =========================
 
     createBook = async (createBookDto: CreateBookDto): Promise<Book> => {
         const book = await this.prismaService.book.create({
@@ -23,63 +37,170 @@ export class BooksService {
                 status: "ACTIVE",
             },
         });
+
         await this.syncToSearch(book, "index");
+
+        // Danh sách sách đã thay đổi
+        await this.redis.delete("books:list");
 
         return book;
     };
 
-    getBooks = async (): Promise<Book[]> => {
-        return this.prismaService.book.findMany({
-            where: {
-                status: "ACTIVE",
+    // =========================
+    // GET ALL BOOKS
+    // =========================
+
+    getBooks = async (page = 1, limit = 10) => {
+        const skip = (page - 1) * limit;
+
+        const cacheKey = `books:page:${page}:limit:${limit}`;
+
+        // 1. Kiểm tra Redis
+        const cachedBooks = await this.redis.get(cacheKey);
+
+        if (cachedBooks) {
+            this.logger.log(`CACHE HIT: ${cacheKey}`);
+
+            return cachedBooks;
+        }
+
+        this.logger.log(`CACHE MISS: ${cacheKey}`);
+
+        // 2. Lấy dữ liệu từ PostgreSQL
+        const [books, total] = await Promise.all([
+            this.prismaService.book.findMany({
+                where: {
+                    status: "ACTIVE",
+                },
+                skip,
+                take: limit,
+                orderBy: {
+                    id: "desc",
+                },
+            }),
+
+            this.prismaService.book.count({
+                where: {
+                    status: "ACTIVE",
+                },
+            }),
+        ]);
+
+        // 3. Tạo response
+        const result = {
+            data: books,
+            meta: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
             },
-        });
+        };
+
+        // 4. Lưu Redis trong 5 phút
+        await this.redis.set(cacheKey, result, this.CACHE_TTL);
+
+        return result;
     };
 
+    // =========================
+    // GET BOOK BY ID
+    // =========================
+
     getBookById = async (bookId: number): Promise<Book> => {
+        const cacheKey = `book:${bookId}`;
+
+        // 1. Kiểm tra Redis
+        const cachedBook = await this.redis.get<Book>(cacheKey);
+
+        if (cachedBook) {
+            this.logger.log(`CACHE HIT: ${cacheKey}`);
+
+            return cachedBook;
+        }
+
+        this.logger.log(`CACHE MISS: ${cacheKey}`);
+
+        // 2. Không có cache → lấy PostgreSQL
         const book = await this.prismaService.book.findUnique({
-            where: { id: bookId },
+            where: {
+                id: bookId,
+            },
         });
 
         if (!book || book.status !== "ACTIVE") {
             throw new NotFoundException("Không tìm thấy sách");
         }
 
+        // 3. Lưu Redis
+        await this.redis.set(cacheKey, book, this.CACHE_TTL);
+
         return book;
     };
+
+    // =========================
+    // UPDATE BOOK
+    // =========================
 
     updateBook = async (bookId: number, updateBookDto: UpdateBookDto): Promise<Book> => {
         await this.getBookById(bookId);
 
         const data: Prisma.BookUpdateInput = {
             ...updateBookDto,
-            ...(updateBookDto.price && {
+
+            ...(updateBookDto.price !== undefined && {
                 price: new Prisma.Decimal(updateBookDto.price),
             }),
         };
 
         const book = await this.prismaService.book.update({
-            where: { id: bookId },
+            where: {
+                id: bookId,
+            },
             data,
         });
 
         await this.syncToSearch(book, "index");
+
+        // Xóa cache của book
+        await this.redis.delete(`book:${bookId}`);
+
+        // Xóa cache danh sách
+        await this.redis.delete("books:list");
+
         return book;
     };
+
+    // =========================
+    // DELETE BOOK
+    // =========================
 
     deleteBook = async (bookId: number): Promise<Book> => {
         await this.getBookById(bookId);
 
         const book = await this.prismaService.book.update({
-            where: { id: bookId },
+            where: {
+                id: bookId,
+            },
             data: {
                 status: "INACTIVE",
             },
         });
 
         await this.syncToSearch(book, "remove");
+
+        // Xóa cache chi tiết
+        await this.redis.delete(`book:${bookId}`);
+
+        // Xóa cache danh sách
+        await this.redis.delete("books:list");
+
         return book;
     };
+
+    // =========================
+    // REDUCE STOCK
+    // =========================
 
     reduceBookStock = async (tx: Prisma.TransactionClient, bookId: number, quantity: number) => {
         return await tx.book.update({
@@ -94,6 +215,10 @@ export class BooksService {
         });
     };
 
+    // =========================
+    // LOW STOCK
+    // =========================
+
     getLowStockBook = async () => {
         return this.prismaService.book.findMany({
             where: {
@@ -103,6 +228,10 @@ export class BooksService {
             },
         });
     };
+
+    // =========================
+    // MEILISEARCH
+    // =========================
 
     private syncToSearch = async (book: Book, action: "index" | "remove"): Promise<void> => {
         try {

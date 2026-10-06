@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface User {
   id: number;
@@ -36,66 +37,73 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  accessToken: null,
-  user: null,
-  loading: false,
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      accessToken: null,
+      user: null,
+      loading: false,
 
-  register: async (data) => {
-    try {
-      set({ loading: true });
+      register: async (data) => {
+        try {
+          set({ loading: true });
 
-      await api.post("/auth/register", data);
+          await api.post("/auth/register", data);
 
-      set({ loading: false });
-    } catch (error) {
-      set({ loading: false });
-      throw error;
-    }
-  },
+          set({ loading: false });
+        } catch (error) {
+          set({ loading: false });
+          throw error;
+        }
+      },
 
-  login: async (data) => {
-    try {
-      set({ loading: true });
+      login: async (data) => {
+        try {
+          set({ loading: true });
 
-      const response = await api.post("/auth/login", data);
+          const response = await api.post("/auth/login", data);
 
-      set({
-        accessToken: response.data.accessToken,
-        user: response.data.user,
-        loading: false,
-      });
-    } catch (error) {
-      set({ loading: false });
-      throw error;
-    }
-  },
+          set({
+            accessToken: response.data.accessToken,
+            user: response.data.user,
+            loading: false,
+          });
+        } catch (error) {
+          set({ loading: false });
+          throw error;
+        }
+      },
 
-  refreshToken: async () => {
-    try {
-      const response = await api.post("/auth/refresh-token");
+      refreshToken: async () => {
+        try {
+          const response = await api.post("/auth/refresh-token");
 
-      set({
-        accessToken: response.data.accessToken,
-      });
-    } catch (error) {
-      set({
-        accessToken: null,
-        user: null,
-      });
+          set({
+            accessToken: response.data.accessToken,
+          });
+        } catch (error) {
+          set({
+            accessToken: null,
+            user: null,
+          });
 
-      throw error;
-    }
-  },
+          throw error;
+        }
+      },
 
-  logout: async () => {
-    try {
-      await api.post("/auth/logout");
-    } finally {
-      set({
-        accessToken: null,
-        user: null,
-      });
-    }
-  },
-}));
+      logout: async () => {
+        try {
+          await api.post("/auth/logout");
+        } finally {
+          set({
+            accessToken: null,
+            user: null,
+          });
+        }
+      },
+    }),
+    {
+      name: "auth-storage",
+    },
+  ),
+);

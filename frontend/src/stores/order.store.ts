@@ -1,11 +1,15 @@
+
 import { create } from "zustand";
 import { api } from "@/lib/api";
+import axios from "axios";
 
 export interface OrderItem {
   id: number;
+  bookId: number;
   quantity: number;
-  price: number;
-  book: {
+  unitPrice: number | string;
+  totalPrice: number | string;
+  book?: {
     id: number;
     title: string;
   };
@@ -13,37 +17,84 @@ export interface OrderItem {
 
 export interface Order {
   id: number;
-  totalAmount: number;
+  totalAmount: number | string;
   status: string;
-  address: string;
+  shippingAddress: string;
   createdAt: string;
-  items: OrderItem[];
+  orderItems: OrderItem[];
+}
+
+export interface CreateOrderItemRequest {
+  bookId: number;
+  quantity: number;
 }
 
 interface OrderState {
   orders: Order[];
   loading: boolean;
+  creating: boolean;
 
   getOrders: () => Promise<void>;
+  createOrder: (
+    shippingAddress: string,
+    orderItems: CreateOrderItemRequest[],
+  ) => Promise<Order>;
 }
 
 export const useOrderStore = create<OrderState>((set) => ({
   orders: [],
   loading: false,
+  creating: false,
 
+  // Lấy danh sách đơn hàng
   getOrders: async () => {
-    try {
-      set({ loading: true });
+    set({ loading: true });
 
+    try {
       const response = await api.get<Order[]>("/orders");
 
       set({
         orders: response.data,
-        loading: false,
       });
-    } catch (error) {
+    } finally {
       set({ loading: false });
+    }
+  },
+
+  // Tạo đơn hàng
+  createOrder: async (shippingAddress, orderItems) => {
+    set({ creating: true });
+
+    try {
+      console.log("Order payload:", {
+        shippingAddress,
+        orderItems,
+      });
+
+      const response = await api.post<Order>("/orders", {
+        shippingAddress,
+        orderItems,
+      });
+
+      set((state) => ({
+        orders: [response.data, ...state.orders],
+      }));
+
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error(
+          "Backend response:",
+          JSON.stringify(error.response?.data, null, 2),
+        );
+      } else {
+        console.error("Unexpected error:", error);
+      }
+
       throw error;
+    } finally {
+      set({ creating: false });
     }
   },
 }));
+

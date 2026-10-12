@@ -16,7 +16,13 @@ export default function OrdersPage() {
     removeFromCart,
   } = useCartStore();
 
-  const { orders, loading: orderLoading, getOrders } = useOrderStore();
+const {
+  orders,
+  loading: orderLoading,
+  creating,
+  getOrders,
+  createOrder,
+} = useOrderStore();
 
   const [address, setAddress] = useState("");
 
@@ -54,9 +60,35 @@ export default function OrdersPage() {
     updateQuantity(itemId, quantity + 1);
   };
 
-  const handleOrder = () => {
+  const handleOrder = async () => {
     if (items.length === 0) {
+      alert("Giỏ hàng đang trống.");
       return;
+    }
+
+    if (address.trim().length < 10) {
+      alert("Vui lòng nhập địa chỉ giao hàng ít nhất 10 ký tự.");
+      return;
+    }
+    
+    try {
+      await createOrder(
+        address.trim(),
+        items.map((item) => ({
+          bookId: item.book.id,
+          quantity: item.quantity,
+        })),
+      );
+
+      // Backend đã xóa cartItems trong database.
+      // Gọi lại API để đồng bộ giỏ hàng và đơn hàng.
+      await Promise.all([getCart(), getOrders()]);
+
+      setAddress("");
+      alert("Đặt hàng thành công!");
+    } catch (error) {
+      console.error("Create order failed:", error);
+      alert("Đặt hàng thất bại. Vui lòng thử lại.");
     }
   };
 
@@ -173,10 +205,10 @@ export default function OrdersPage() {
           <button
             type="button"
             onClick={handleOrder}
-            disabled={items.length === 0 || cartLoading}
+            disabled={items.length === 0 || cartLoading || creating}
             className="rounded-full bg-[#2F4B3C] px-4 py-2.5 text-sm font-medium text-[#FAF6EE] transition-colors hover:bg-[#26392E] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Đặt hàng
+            {creating ? "Đang đặt hàng..." : "Đặt hàng"}
           </button>
         </div>
       </div>
@@ -214,12 +246,14 @@ export default function OrdersPage() {
                 </span>
               </div>
 
-              <p className="mt-1 text-sm text-[#1F2321]/60">{order.address}</p>
+              <p className="mt-1 text-sm text-[#1F2321]/60">
+                {order.shippingAddress}
+              </p>
 
               <div className="mt-3 flex flex-col gap-1">
-                {order.items?.map((item) => (
+                {order.orderItems?.map((item) => (
                   <p key={item.id} className="text-sm text-[#1F2321]/70">
-                    {item.book.title} × {item.quantity}
+                    {item.book?.title} × {item.quantity}
                   </p>
                 ))}
               </div>

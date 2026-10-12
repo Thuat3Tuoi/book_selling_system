@@ -73,6 +73,11 @@ export class SearchService {
                 "description",
             ]);
             await this.index.updateFilterableAttributes(["category"]);
+            // await this.index.updateTypoTolerance({
+            //     minWordSizeForTypos: {
+            //         oneTypo: 6,
+            //     }
+            // });
             this.logger.log(`Meilisearch index "${BOOKS_INDEX}"  da san sang`);
         } catch (error) {
             this.logger.error(
@@ -120,6 +125,7 @@ export class SearchService {
             limit,
             offset,
             filter,
+            matchingStrategy: "all",
         });
 
         return {

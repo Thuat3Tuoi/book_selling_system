@@ -106,6 +106,7 @@ describe('SearchService', () => {
       limit: 10,
       offset: 10,
       filter: undefined,
+      matchingStrategy: "all",
     });
     expect(result.totalHits).toBe(1);
     expect(result.processingTimeMs).toBe(7);
@@ -128,6 +129,7 @@ describe('SearchService', () => {
       limit: 20,
       offset: 0,
       filter: undefined,
+      matchingStrategy: "all",
     });
   });
 });

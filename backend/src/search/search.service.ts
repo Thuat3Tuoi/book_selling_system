@@ -37,12 +37,14 @@ export class SearchService {
     private index: Index<BookSearchDocument>;
 
     constructor(private readonly configService: ConfigService) {
-        const host = this.configService?.get<string>("MEILISEARCH_HOST") 
-            || process.env.MEILISEARCH_HOST 
-            || "http://localhost:7700";
+        const host =
+            this.configService?.get<string>("MEILISEARCH_HOST") ||
+            process.env.MEILISEARCH_HOST ||
+            "http://localhost:7700";
 
-        const apiKey = this.configService?.get<string>("MEILISEARCH_API_KEY") 
-            || process.env.MEILISEARCH_API_KEY;
+        const apiKey =
+            this.configService?.get<string>("MEILISEARCH_API_KEY") ||
+            process.env.MEILISEARCH_API_KEY;
 
         this.client = new Meilisearch({
             host,
@@ -65,7 +67,7 @@ export class SearchService {
         }
 
         try {
-            await this .index.updateSearchableAttributes([
+            await this.index.updateSearchableAttributes([
                 "title",
                 "author",
                 "isbn",
@@ -99,7 +101,6 @@ export class SearchService {
         };
     }
 
-
     async indexBook(book: Book): Promise<void> {
         const documnent = this.toSearchDocument(book);
         const task = await this.index.addDocuments([documnent]);
@@ -111,10 +112,7 @@ export class SearchService {
         this.logger.log(`Xoa sach id=${bookId} khoi Meilisearch (taskUid=${task.taskUid})`);
     }
 
-    async searchBooks(
-        query: string,
-        options: SearchBooksOptions = {}
-    ): Promise<SearchBooksResult> {
+    async searchBooks(query: string, options: SearchBooksOptions = {}): Promise<SearchBooksResult> {
         const page = options.page ?? 1;
         const limit = options.limit ?? 20;
         const offset = (page - 1) * limit;
@@ -135,6 +133,14 @@ export class SearchService {
             page,
             limit,
         };
+    }
 
-    }  
+    async reindexAll(books: Book[]): Promise<void> {
+        const BATCH = 1000;
+        for (let i = 0; i < books.length; i += BATCH) {
+            const docs = books.slice(i, i + BATCH).map((b) => this.toSearchDocument(b));
+            const task = await this.index.addDocuments(docs);
+            this.logger.log(`Batch ${i / BATCH + 1}: taskUid=${task.taskUid}`);
+        }
+    }
 }

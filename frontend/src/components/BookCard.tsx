@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Book } from "@/lib/types";
+import Image from "next/image";
 import { formatPrice } from "@/lib/format";
 
 export default function BookCard({ book }: { book: Book }) {
@@ -17,9 +18,19 @@ export default function BookCard({ book }: { book: Book }) {
     <div className="flex flex-col overflow-hidden rounded-sm border border-[#E4DCC8] bg-white">
       <Link href={`/products/${book.id}`} className="block">
         <div className="flex aspect-[3/4] items-center justify-center bg-[#EFE9DA] px-4 text-center">
-          <span className="font-serif text-sm leading-snug text-[#1F2321]/70">
-            {book.title}
-          </span>
+          {book.coverImageUrl ? (
+            <Image
+              width={200}
+              height={300}
+              src={book.coverImageUrl}
+              alt={`Bìa sách ${book.title}`}
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <span className="font-serif text-sm leading-snug text-[#1F2321]/50">
+              Không có bìa sách
+            </span>
+          )}
         </div>
       </Link>
 

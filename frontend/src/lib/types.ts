@@ -20,7 +20,7 @@ export interface Book {
   description?: string;
   price: string; // Prisma.Decimal -> JSON string, vd "120000"
   stockQuantity: number;
-  coverUrl?: string;
+  coverImageUrl?: string;
   status: BookStatus;
 }
 

@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { formatPrice } from "@/lib/format";
 import { useBookStore } from "@/stores/product.store";
 import { useCartStore } from "@/stores/cart.store";
+import Image from "next/image";
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -99,9 +100,15 @@ export default function ProductDetailPage() {
       <div className="mt-6 grid gap-10 sm:grid-cols-[280px_1fr]">
         {/* Book cover */}
         <div className="flex aspect-[3/4] items-center justify-center rounded-sm bg-[#EFE9DA] px-6 text-center">
-          <span className="font-serif text-lg leading-snug text-[#1F2321]/70">
-            {selectedBook.title}
-          </span>
+          {/* <span className="font-serif text-lg leading-snug text-[#1F2321]/70"> */}
+          <Image
+                        width={200}
+                        height={300}
+                        src={selectedBook.coverImageUrl}
+                        alt={`Bìa sách ${selectedBook.title}`}
+                        className="max-h-full max-w-full object-contain"
+                      />
+          {/* </span> */}
         </div>
 
         {/* Information */}

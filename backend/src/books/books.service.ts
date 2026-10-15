@@ -32,7 +32,13 @@ export class BooksService {
     createBook = async (createBookDto: CreateBookDto): Promise<Book> => {
         const book = await this.prismaService.book.create({
             data: {
-                ...createBookDto,
+                title: createBookDto.title,
+                isbn: createBookDto.isbn,
+                description: createBookDto.description,
+                author: createBookDto.author,
+                category: createBookDto.category,
+                stockQuantity: createBookDto.stockQuantity,
+                coverImageUrl: createBookDto.coverImageUrl,
                 price: new Prisma.Decimal(createBookDto.price),
                 status: "ACTIVE",
             },
@@ -146,11 +152,15 @@ export class BooksService {
         await this.getBookById(bookId);
 
         const data: Prisma.BookUpdateInput = {
-            ...updateBookDto,
-
-            ...(updateBookDto.price !== undefined && {
-                price: new Prisma.Decimal(updateBookDto.price),
-            }),
+            title: updateBookDto.title,
+            isbn: updateBookDto.isbn,
+            description: updateBookDto.description,
+            author: updateBookDto.author,
+            category: updateBookDto.category,
+            stockQuantity: updateBookDto.stockQuantity,
+            coverImageUrl: updateBookDto.coverImageUrl,
+            status: updateBookDto.status,
+            price: updateBookDto.price === undefined ? undefined : new Prisma.Decimal(updateBookDto.price),
         };
 
         const book = await this.prismaService.book.update({

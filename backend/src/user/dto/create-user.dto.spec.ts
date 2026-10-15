@@ -25,7 +25,7 @@ describe("CreateUserDto", () => {
         });
 
         it("van hop le khi bo trong field optinal (phoneNumber, address", async () => {
-            const {phoneNumber, address, ...rest} = validPayload;
+            const {phoneNumber: _phoneNumber, address: _address, ...rest} = validPayload;
             const errors = await validateDto(rest);
             expect(errors).toHaveLength(0);
         });

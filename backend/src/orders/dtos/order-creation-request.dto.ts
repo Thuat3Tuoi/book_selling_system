@@ -1,10 +1,8 @@
 
 import {
   IsArray,
-  IsInt,
   IsNotEmpty,
   IsString,
-  Min,
   MinLength,
   ValidateNested,
 } from "class-validator";

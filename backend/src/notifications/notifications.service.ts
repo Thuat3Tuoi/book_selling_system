@@ -10,7 +10,9 @@ export class NotificationsService {
     createNotification = async (request: NotificationCreationRequest): Promise<Notification> => {
         return this.prismaService.notification.create({
             data: {
-                ...request,
+                notifyType: request.notifyType,
+                userId: request.userId,
+                message: request.message,
             },
         });
     };

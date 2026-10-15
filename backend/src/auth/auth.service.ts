@@ -1,6 +1,5 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import * as bcrypt from "bcrypt";
 import type { Response } from "express";
 import { PrismaService } from "../prisma/prisma.service.js";
 

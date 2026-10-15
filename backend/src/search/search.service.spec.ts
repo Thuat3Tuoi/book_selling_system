@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SearchService } from './search.service.js';
-import { Meilisearch } from 'meilisearch';
 import type { Book } from '../generated/prisma/client.js';
 import { ConfigService } from '@nestjs/config';
 
@@ -15,11 +14,6 @@ const mockIndex = {
   }),
   updateSearchableAttributes: vi.fn().mockResolvedValue({ taskUid: 3 }),
   updateFilterableAttributes: vi.fn().mockResolvedValue({ taskUid: 4 }),
-};
-
-const mockClient = {
-  index: vi.fn().mockReturnValue(mockIndex),
-  createIndex: vi.fn().mockResolvedValue({ taskUid: 0 }),
 };
 
 vi.mock("meilisearch", () => {

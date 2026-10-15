@@ -50,7 +50,7 @@ export class UserService {
             throw new NotFoundException("User not found");
         }
 
-        const { passwordHash, ...safeUser } = user;
+        const { passwordHash: _passwordHash, ...safeUser } = user;
         return safeUser;
     }
 
@@ -66,7 +66,7 @@ export class UserService {
         const status = await bcrypt.compare(password, user.passwordHash);
         if (status) {
             // xóa passwordHash trước khi trả về user
-            const { passwordHash, ...safeUser } = user;
+            const { passwordHash: _passwordHash, ...safeUser } = user;
             return safeUser;
         }
         return null;

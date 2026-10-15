@@ -27,7 +27,7 @@ export class OrderCreatedConsumer {
             channel.ack(message);
 
             console.log("Send email successfully!");
-        } catch (error) {
+        } catch {
             channel.nack(message, false, true);
             // message → message hiện tại.
             // false → chỉ áp dụng cho message này, không phải nhiều message trước đó.

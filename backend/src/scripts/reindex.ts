@@ -5,8 +5,14 @@ import { PrismaService } from "../prisma/prisma.service.js";
 
 async function main() {
     const app = await NestFactory.createApplicationContext(AppModule);
-    const books = await app.get(PrismaService).book.findMany();
-    await app.get(SearchService).reindexAll(books);
-    await app.close();
+    try {
+        const books = await app.get(PrismaService).book.findMany();
+        await app.get(SearchService).reindexAll(books);
+    } finally {
+        await app.close();
+    }
 }
-main();
+void main().catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+});

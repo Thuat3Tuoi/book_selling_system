@@ -12,13 +12,16 @@ if (!connectionString) {
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
-const DEFAULT_PASSWORD = "Password@123";
+const DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD;
 const money = (value: number | string) => new Prisma.Decimal(value);
 const date = (value: string) => new Date(value);
 const coverUrl = (isbn: string) => `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`;
 
 async function main() {
     console.log("🌱 Bắt đầu tạo dữ liệu mẫu...");
+    if (!DEFAULT_PASSWORD) {
+        throw new Error("DEFAULT_PASSWORD khong ton tai trong moi truong");
+    }
 
     const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
@@ -422,7 +425,6 @@ async function main() {
     );
 
     console.log("✅ Tạo dữ liệu mẫu thành công.");
-    console.log(`🔐 Tài khoản dùng thử sử dụng mật khẩu: ${DEFAULT_PASSWORD}`);
     console.log("   Admin: admin@bookstore.example.com");
     console.log("   Staff: staff@bookstore.example.com");
     console.log("   Customer: minh.tran@example.com");

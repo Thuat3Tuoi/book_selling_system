@@ -53,6 +53,13 @@ export class SearchService {
         this.index = this.client.index<BookSearchDocument>(BOOKS_INDEX);
     }
 
+    async health(): Promise<void> {
+        const result = await this.client.health();
+        if (result.status !== "available") {
+            throw new Error("Meilisearch unavailable");
+        }
+    }
+
     async onModuleInit(): Promise<void> {
         try {
             await this.client.createIndex(BOOKS_INDEX, { primaryKey: "id" });

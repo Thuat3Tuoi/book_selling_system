@@ -16,6 +16,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { CronJobModule } from "./infrastructure/cron-job/cron-job.module.js";
 import { SearchModule } from './search/search.module.js';
 import { RedisModule } from "./redis/redis.module.js";
+import { HealthController } from "./health.controller.js";
 
 @Module({
     imports: [
@@ -33,7 +34,7 @@ import { RedisModule } from "./redis/redis.module.js";
         SearchModule,
         RedisModule
     ],
-    controllers: [AppController],
+    controllers: [AppController, HealthController],
     providers: [AppService, { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],
 })
 export class AppModule {}

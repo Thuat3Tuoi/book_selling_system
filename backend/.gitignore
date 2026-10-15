@@ -60,3 +60,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
 /src/generated/prisma
+
+# dvt
+backend/HUONG_DAN_TRIEN_KHAI_DOCKER_COMPOSE.md

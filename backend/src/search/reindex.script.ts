@@ -1,4 +1,4 @@
-import 'dotenv/config'; 
+import "dotenv/config";
 import { NestFactory } from "@nestjs/core";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { SearchService } from "./search.service.js";
@@ -20,7 +20,7 @@ class ReindexContextModule {}
 
 async function reindexAllBooks() {
     const app = await NestFactory.createApplicationContext(ReindexContextModule, {
-        logger: ['error', 'warn'],
+        logger: ["error", "warn"],
     });
 
     const prisma = app.get(PrismaService);
@@ -28,7 +28,7 @@ async function reindexAllBooks() {
 
     console.log("Bat dau dong bo toan bo sach vao Meilisearch...");
     const startedAt = performance.now();
-    
+
     const books = await prisma.book.findMany({
         where: { status: "ACTIVE" },
     });
@@ -49,8 +49,8 @@ async function reindexAllBooks() {
 
     const durationMs = Math.round(performance.now() - startedAt);
     console.log(
-        `Hoan tat: ${successCount}/${books.length} sach dong bo thanh cong, `
-        + `${failCount} loi, mat ${durationMs}ms`
+        `Hoan tat: ${successCount}/${books.length} sach dong bo thanh cong, ` +
+            `${failCount} loi, mat ${durationMs}ms`
     );
 
     await app.close();

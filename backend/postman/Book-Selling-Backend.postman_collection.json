@@ -1,0 +1,746 @@
+{
+  "info": {
+    "_postman_id": "b318b690-fcee-4d13-8246-f713e18f15e1",
+    "name": "Book Selling Backend API",
+    "description": "Import collection này vào Postman. Chạy backend tại baseUrl (mặc định http://localhost:3001). Trong Collection Variables, đặt userPassword (ít nhất 6 ký tự); userEmail có thể để trống để request đăng ký tự tạo email mẫu. Trên database mới, đăng ký yêu cầu Role ID 2 tồn tại vì User.roleId mặc định bằng 2; migration chỉ tạo schema, không seed role. Seed hiện có TRUNCATE dữ liệu nên không nên chạy trên database cần giữ. Gọi Đăng ký (nếu chưa có user), Đăng nhập, sau đó các route Bearer. Login tự lưu accessToken và refreshToken từ Set-Cookie. Các request tạo/sửa/xóa thay đổi dữ liệu thật; chạy thủ công theo nhu cầu. Không lưu mật khẩu hoặc token thật vào tệp collection trước khi chia sẻ.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "item": [
+    {
+      "name": "01 - Hệ thống",
+      "description": "Kiểm tra backend trước khi gọi API nghiệp vụ.",
+      "item": [
+        {
+          "name": "GET / — API gốc",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/",
+            "description": "Trả về lời chào của ứng dụng."
+          }
+        },
+        {
+          "name": "GET /health — Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Trả status ok khi PostgreSQL, Redis và Meilisearch sẵn sàng; trả 503 nếu một dependency kiểm tra thất bại."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Dependencies ready', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - Xác thực",
+      "description": "Đặt userPassword trong Collection Variables trước khi đăng ký. Database mới cần Role có ID 2 vì User.roleId mặc định bằng 2. Login lưu accessToken và refreshToken vào biến collection.",
+      "item": [
+        {
+          "name": "POST /auth/register — Đăng ký",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Tạo user mới. Cần Role ID 2 tồn tại. Nếu userEmail còn trống, script tạo email mẫu duy nhất. Password phải ít nhất 6 ký tự; nên đặt giá trị riêng trong Collection Variables.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Postman\",\n  \"lastName\": \"Tester\",\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('userEmail')) {",
+                  "  pm.collectionVariables.set('userEmail', `postman.${Date.now()}@example.com`);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/login — Đăng nhập",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Đăng nhập bằng email/password. Script tự lưu accessToken, userId và refreshToken lấy từ Set-Cookie cho các request tiếp theo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "  if (data.user && data.user.id != null) pm.collectionVariables.set('userId', String(data.user.id));",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie') || '';",
+                  "  const match = setCookie.match(/refreshToken=([^;]+)/);",
+                  "  if (match) pm.collectionVariables.set('refreshToken', match[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/refresh-token — Làm mới access token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/refresh-token",
+            "description": "Gửi refreshToken trong JSON body. Backend trả accessToken mới; script cập nhật biến accessToken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "  if (data.user && data.user.id != null) pm.collectionVariables.set('userId', String(data.user.id));",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie') || '';",
+                  "  const match = setCookie.match(/refreshToken=([^;]+)/);",
+                  "  if (match) pm.collectionVariables.set('refreshToken', match[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /auth/profile — Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/profile",
+            "description": "Yêu cầu Bearer token; trả thông tin user từ JWT strategy.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/logout — Đăng xuất",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "refreshToken={{refreshToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/logout",
+            "description": "Backend đọc refreshToken từ Cookie, xóa session và clear cookie. Header Cookie lấy từ biến collection; script xóa token đã lưu sau phản hồi thành công."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  pm.collectionVariables.unset('accessToken');",
+                  "  pm.collectionVariables.unset('refreshToken');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 - Người dùng",
+      "description": "Endpoint người dùng hiện có.",
+      "item": [
+        {
+          "name": "GET /user/me — Thông tin của tôi",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/user/me",
+            "description": "Yêu cầu Bearer token; trả user hiện tại không gồm passwordHash.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Sách",
+      "description": "GET /books yêu cầu Bearer theo controller hiện tại. Các route sách khác chưa gắn guard. Tạo/cập nhật sách đồng bộ sang Meilisearch; xóa là đổi trạng thái thành INACTIVE.",
+      "item": [
+        {
+          "name": "POST /books — Tạo sách",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/books",
+            "description": "Tạo sách. ISBN dùng timestamp để giảm trùng lặp khi chạy lại. Script lưu id vào bookId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Sách mẫu Postman\",\n  \"isbn\": \"POSTMAN-{{$timestamp}}\",\n  \"description\": \"Dữ liệu mẫu để thử API\",\n  \"author\": \"Tác giả mẫu\",\n  \"category\": \"Programming\",\n  \"price\": 120000,\n  \"stockQuantity\": 20,\n  \"coverImageUrl\": \"https://example.com/cover.jpg\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data && data.id != null) pm.collectionVariables.set(\"bookId\", String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /books — Danh sách sách",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/books?page={{page}}&limit={{limit}}",
+            "description": "Yêu cầu Bearer token. Chỉ lấy sách ACTIVE, trả data và meta phân trang.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /books/:id — Chi tiết sách",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/books/{{bookId}}",
+            "description": "Dùng bookId được lưu khi tạo sách. Chỉ trả sách ACTIVE; không có sách trả 404."
+          }
+        },
+        {
+          "name": "PATCH /books/:id — Cập nhật sách",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/books/{{bookId}}",
+            "description": "Các thuộc tính đều tùy chọn; ví dụ cập nhật giá và số lượng tồn.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 135000,\n  \"stockQuantity\": 25\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "DELETE /books/:id — Ẩn sách",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/books/{{bookId}}",
+            "description": "Soft delete: đổi status thành INACTIVE và xóa sách khỏi chỉ mục tìm kiếm."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Tìm kiếm",
+      "description": "Tìm kiếm qua Meilisearch; chỉ mục có thể cần thời gian xử lý sau khi tạo sách.",
+      "item": [
+        {
+          "name": "GET /search/books — Tìm sách",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/search/books?q={{searchQuery}}&page={{page}}&limit={{limit}}",
+            "description": "Tham số q tùy chọn; page >= 1, limit từ 1 đến 100. Có thể thêm category vào query để lọc."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Giỏ hàng",
+      "description": "Tất cả route trong folder này yêu cầu Bearer token. Backend lấy user ID từ token.",
+      "item": [
+        {
+          "name": "GET /carts — Xem giỏ hàng",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/carts",
+            "description": "Lấy giỏ hàng của user đăng nhập; backend tạo giỏ rỗng nếu chưa có."
+          }
+        },
+        {
+          "name": "POST /carts/items — Thêm sách",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/carts/items",
+            "description": "bookId phải tồn tại, quantity là số nguyên dương. Script lưu cartItemId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookId\": {{bookId}},\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data && data.id != null) pm.collectionVariables.set(\"cartItemId\", String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /carts/items/:cartItemId — Đổi số lượng",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/carts/items/{{cartItemId}}",
+            "description": "quantity phải >= 1.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "DELETE /carts/items/:cartItemId — Xóa mục",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/carts/items/{{cartItemId}}",
+            "description": "Xóa mục giỏ hàng theo cartItemId."
+          }
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "07 - Đơn hàng",
+      "description": "Tất cả route yêu cầu Bearer. Tạo đơn hàng ghi dữ liệu, trừ tồn kho, xóa mục giỏ hàng và phát sự kiện RabbitMQ; hãy chạy thủ công khi muốn tạo dữ liệu.",
+      "item": [
+        {
+          "name": "POST /orders — Tạo đơn hàng",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/orders",
+            "description": "Địa chỉ ít nhất 10 ký tự, orderItems không rỗng, bookId và quantity là số nguyên dương. Script lưu orderId và orderItemId đầu tiên.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shippingAddress\": \"123 Đường ABC, Phường 1, TP. Hồ Chí Minh\",\n  \"orderItems\": [\n    { \"bookId\": {{bookId}}, \"quantity\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id != null) pm.collectionVariables.set('orderId', String(data.id));",
+                  "  if (data.orderItems && data.orderItems[0] && data.orderItems[0].id != null) {",
+                  "    pm.collectionVariables.set('orderItemId', String(data.orderItems[0].id));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /orders — Danh sách đơn hàng",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/orders",
+            "description": "Backend hiện trả tất cả đơn hàng sau khi xác thực, chưa lọc theo user."
+          }
+        },
+        {
+          "name": "GET /orders/:id — Chi tiết đơn hàng",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/orders/{{orderId}}",
+            "description": "Lấy đơn hàng theo orderId; không tồn tại trả 404."
+          }
+        },
+        {
+          "name": "PATCH /orders/:id — Đổi địa chỉ",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/orders/{{orderId}}",
+            "description": "Cập nhật shippingAddress.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shippingAddress\": \"456 Đường Mới, Phường 2, TP. Hồ Chí Minh\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PATCH /orders/:id/status — Đổi trạng thái",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/orders/{{orderId}}/status",
+            "description": "Giá trị status hợp lệ: PENDING, CONFIRMED, SHIPPING, COMPLETED, CANCELLED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "08 - Chi tiết đơn hàng",
+      "description": "Các route này hiện chưa gắn guard trong controller.",
+      "item": [
+        {
+          "name": "GET /order-items — Danh sách",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/order-items",
+            "description": "Lấy tất cả order item."
+          }
+        },
+        {
+          "name": "GET /order-items/:id — Chi tiết",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/order-items/{{orderItemId}}",
+            "description": "orderItemId được lưu sau khi tạo đơn hàng; không tồn tại trả 404."
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 - Thông báo",
+      "description": "Các route này hiện chưa gắn guard. Khi tạo thông báo, userId phải tồn tại.",
+      "item": [
+        {
+          "name": "GET /notifications — Danh sách",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notifications",
+            "description": "Lấy tất cả thông báo."
+          }
+        },
+        {
+          "name": "GET /notifications/:id — Chi tiết",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notifications/{{notificationId}}",
+            "description": "Lấy thông báo theo ID; không tồn tại trả 404."
+          }
+        },
+        {
+          "name": "POST /notifications — Tạo thông báo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications",
+            "description": "userId phải là ID user có thật. Sau login, script đã lưu userId. Script này lưu notificationId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notifyType\": \"INFO\",\n  \"userId\": {{userId}},\n  \"message\": \"Thông báo thử từ Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const data = pm.response.json();",
+                  "  if (data && data.id != null) pm.collectionVariables.set(\"notificationId\", String(data.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "userEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "bookId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "cartItemId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "orderItemId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "page",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "limit",
+      "value": "10",
+      "type": "string"
+    },
+    {
+      "key": "searchQuery",
+      "value": "book",
+      "type": "string"
+    }
+  ]
+}

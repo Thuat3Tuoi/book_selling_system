@@ -15,7 +15,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
 
     async onModuleInit() {
-        await this.redis.ping();
+        await this.ping();
+    }
+
+    async ping(): Promise<void> {
+        if (await this.redis.ping() !== "PONG") {
+            throw new Error("Redis unavailable");
+        }
     }
 
     async onModuleDestroy() {

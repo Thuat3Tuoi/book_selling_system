@@ -79,7 +79,7 @@ describe("Auth (e2e)", () => {
                 })
                 .expect(201)
                 .expect((res) => {
-                    expect(res.body).toEqual({ message: "User created successfully"});
+                    expect(res.body).toEqual({ success: true, data: { message: "User created successfully" } });
                 });
         });
 
@@ -155,8 +155,8 @@ describe("Auth (e2e)", () => {
                 })
                 .expect(200)
                 .expect((res) => {
-                    expect(res.body).toHaveProperty("accessToken");
-                    expect(typeof res.body.accessToken).toBe("string");
+                    expect(res.body.success).toBe(true);
+                    expect(typeof res.body.data.accessToken).toBe("string");
                 });
         });
 

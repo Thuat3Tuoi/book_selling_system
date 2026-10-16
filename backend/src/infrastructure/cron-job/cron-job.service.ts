@@ -14,8 +14,8 @@ export class CronJobService {
         private prisma: PrismaService
     ) {}
 
-    // @Cron("* * 8 * * *")
-    @Cron(CronExpression.EVERY_5_SECONDS)
+    // @Cron(CronExpression.EVERY_5_SECONDS)
+    @Cron("* * 8 * * *")
     async sendNotification() {
         this.logger.log("Checking low stock books...");
         // A fresh migrated database has no notification recipient yet.

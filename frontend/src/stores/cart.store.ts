@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/lib/api";
+import type { ApiResponse } from "@/lib/types";
 
 export interface CartItem {
   id: number;
@@ -37,10 +38,10 @@ export const useCartStore = create<CartState>((set) => ({
     try {
       set({ loading: true });
 
-      const response = await api.get<Cart>("/carts");
+      const response = await api.get<ApiResponse<Cart>>("/carts");
 
       set({
-        cart: response.data,
+        cart: response.data.data,
         loading: false,
       });
     } catch (error) {
@@ -58,12 +59,12 @@ export const useCartStore = create<CartState>((set) => ({
     };
 
 
-    const response = await api.post("/carts/items", data);
+    await api.post("/carts/items", data);
 
-    const cartResponse = await api.get<Cart>("/carts");
+    const cartResponse = await api.get<ApiResponse<Cart>>("/carts");
 
     set({
-      cart: cartResponse.data,
+      cart: cartResponse.data.data,
     });
   },
 
@@ -72,20 +73,20 @@ export const useCartStore = create<CartState>((set) => ({
       quantity,
     });
 
-    const response = await api.get<Cart>("/carts");
+    const response = await api.get<ApiResponse<Cart>>("/carts");
 
     set({
-      cart: response.data,
+      cart: response.data.data,
     });
   },
 
   removeFromCart: async (itemId) => {
     await api.delete(`/carts/items/${itemId}`);
 
-    const response = await api.get<Cart>("/carts");
+    const response = await api.get<ApiResponse<Cart>>("/carts");
 
     set({
-      cart: response.data,
+      cart: response.data.data,
     });
   },
 

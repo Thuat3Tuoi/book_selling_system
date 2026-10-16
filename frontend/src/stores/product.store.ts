@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import type { Book } from "@/lib/types";
+import type { ApiResponse, Book } from "@/lib/types";
 import { create } from "zustand";
 
 interface BooksMeta {
@@ -49,10 +49,7 @@ export const useBookStore = create<BookState>((set) => ({
     try {
       set({ loading: true });
 
-      const response = await api.get<{
-        data: Book[];
-        meta: BooksMeta;
-      }>("/books", {
+      const response = await api.get<ApiResponse<Book[], BooksMeta>>("/books", {
         params: {
           page,
           limit,
@@ -61,7 +58,7 @@ export const useBookStore = create<BookState>((set) => ({
 
       set({
         books: response.data.data,
-        meta: response.data.meta,
+        meta: response.data.meta ?? null,
         loading: false,
       });
     } catch (error) {
@@ -78,10 +75,10 @@ export const useBookStore = create<BookState>((set) => ({
         selectedBook: null,
       });
 
-      const response = await api.get<Book>(`/books/${id}`);
+      const response = await api.get<ApiResponse<Book>>(`/books/${id}`);
 
       set({
-        selectedBook: response.data,
+        selectedBook: response.data.data,
         loading: false,
       });
     } catch (error) {
@@ -103,23 +100,25 @@ export const useBookStore = create<BookState>((set) => ({
   searchBooks: async (q: string, page = 1, limit = 20) => {
     try {
       set({ searchLoading: true });
-      const response = await api.get<{
-        hits: Book[];
-        totalHits: number;
-        processingTimeMs: number;
-        page: number;
-        limit: number;
-      }>("/search/books", {
+      const response = await api.get<
+        ApiResponse<{
+          hits: Book[];
+          totalHits: number;
+          processingTimeMs: number;
+          page: number;
+          limit: number;
+        }>
+      >("/search/books", {
         params: { q, page, limit },
       });
 
       set({
-        searchResults: response.data.hits,
+        searchResults: response.data.data.hits,
         searchMeta: {
-          totalHits: response.data.totalHits,
-          processingTimeMs: response.data.processingTimeMs,
-          page: response.data.page,
-          limit: response.data.limit,
+          totalHits: response.data.data.totalHits,
+          processingTimeMs: response.data.data.processingTimeMs,
+          page: response.data.data.page,
+          limit: response.data.data.limit,
         },
         searchLoading: false,
       });

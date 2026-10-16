@@ -11,6 +11,21 @@ export interface User {
   address?: string | null;
 }
 
+export interface ApiResponse<T, M = never> {
+  success: true;
+  data: T;
+  meta?: M;
+}
+
+export interface ApiErrorResponse {
+  success: false;
+  error: {
+    statusCode: number;
+    message: string;
+    details?: string[];
+  };
+}
+
 export type BookStatus = "ACTIVE" | "INACTIVE";
 
 export interface Book {

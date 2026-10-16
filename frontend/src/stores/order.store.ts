@@ -1,6 +1,7 @@
 
 import { create } from "zustand";
 import { api } from "@/lib/api";
+import type { ApiResponse } from "@/lib/types";
 import axios from "axios";
 
 export interface OrderItem {
@@ -51,10 +52,10 @@ export const useOrderStore = create<OrderState>((set) => ({
     set({ loading: true });
 
     try {
-      const response = await api.get<Order[]>("/orders");
+      const response = await api.get<ApiResponse<Order[]>>("/orders");
 
       set({
-        orders: response.data,
+        orders: response.data.data,
       });
     } finally {
       set({ loading: false });
@@ -71,16 +72,16 @@ export const useOrderStore = create<OrderState>((set) => ({
         orderItems,
       });
 
-      const response = await api.post<Order>("/orders", {
+      const response = await api.post<ApiResponse<Order>>("/orders", {
         shippingAddress,
         orderItems,
       });
 
       set((state) => ({
-        orders: [response.data, ...state.orders],
+        orders: [response.data.data, ...state.orders],
       }));
 
-      return response.data;
+      return response.data.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.error(

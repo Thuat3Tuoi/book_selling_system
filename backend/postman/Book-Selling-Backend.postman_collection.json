@@ -37,7 +37,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Dependencies ready', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                  "pm.test('Dependencies ready', () => pm.expect(pm.response.json().data.status).to.eql('ok'));"
                 ]
               }
             }
@@ -116,7 +116,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
+                  "  const data = pm.response.json().data;",
                   "  if (data.accessToken) pm.collectionVariables.set('accessToken', data.accessToken);",
                   "  if (data.user && data.user.id != null) pm.collectionVariables.set('userId', String(data.user.id));",
                   "  const setCookie = pm.response.headers.get('Set-Cookie') || '';",
@@ -158,7 +158,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
+                  "  const data = pm.response.json().data;",
                   "  if (data.accessToken) pm.collectionVariables.set('accessToken', data.accessToken);",
                   "  if (data.user && data.user.id != null) pm.collectionVariables.set('userId', String(data.user.id));",
                   "  const setCookie = pm.response.headers.get('Set-Cookie') || '';",
@@ -279,7 +279,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
+                  "  const data = pm.response.json().data;",
                   "  if (data && data.id != null) pm.collectionVariables.set(\"bookId\", String(data.id));",
                   "}"
                 ]
@@ -408,7 +408,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
+                  "  const data = pm.response.json().data;",
                   "  if (data && data.id != null) pm.collectionVariables.set(\"cartItemId\", String(data.id));",
                   "}"
                 ]
@@ -495,7 +495,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
+                  "  const data = pm.response.json().data;",
                   "  if (data.id != null) pm.collectionVariables.set('orderId', String(data.id));",
                   "  if (data.orderItems && data.orderItems[0] && data.orderItems[0].id != null) {",
                   "    pm.collectionVariables.set('orderItemId', String(data.orderItems[0].id));",
@@ -660,7 +660,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code >= 200 && pm.response.code < 300) {",
-                  "  const data = pm.response.json();",
+                  "  const data = pm.response.json().data;",
                   "  if (data && data.id != null) pm.collectionVariables.set(\"notificationId\", String(data.id));",
                   "}"
                 ]

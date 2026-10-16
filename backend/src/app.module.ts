@@ -9,8 +9,10 @@ import { PrismaModule } from "./prisma/prisma.module.js";
 import { BooksModule } from "./books/books.module.js";
 import { CartsModule } from "./carts/carts.module.js";
 import { UserModule } from "./user/user.module.js";
-import { APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_FILTER, APP_INTERCEPTOR } from "@nestjs/core";
 import { LoggingInterceptor } from "./common/interceptors/logging.interceptor.js";
+import { ResponseEnvelopeInterceptor } from "./common/interceptors/response-envelope.interceptor.js";
+import { ResponseEnvelopeExceptionFilter } from "./common/filters/response-envelope-exception.filter.js";
 import { OrderItemsModule } from "./order-items/order-items.module.js";
 import { ScheduleModule } from "@nestjs/schedule";
 import { CronJobModule } from "./infrastructure/cron-job/cron-job.module.js";
@@ -35,6 +37,11 @@ import { HealthController } from "./health.controller.js";
         RedisModule
     ],
     controllers: [AppController, HealthController],
-    providers: [AppService, { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],
+    providers: [
+        AppService,
+        { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
+        { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
+        { provide: APP_FILTER, useClass: ResponseEnvelopeExceptionFilter },
+    ],
 })
 export class AppModule {}

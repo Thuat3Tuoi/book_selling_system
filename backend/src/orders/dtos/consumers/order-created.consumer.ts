@@ -10,7 +10,7 @@ export class OrderCreatedConsumer {
     @EventPattern<string>("order.created")
     async handle(@Payload() event: Order, @Ctx() context: RmqContext) {
         console.log("Send email...");
-        await new Promise((resolve) => setTimeout(resolve, 10000));
+        // await new Promise((resolve) => setTimeout(resolve, 10000));
 
         const channel = context.getChannelRef();
         const message = context.getMessage();

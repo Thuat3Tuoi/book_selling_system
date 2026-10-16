@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import type { ApiResponse } from "@/lib/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -61,11 +62,11 @@ export const useAuthStore = create<AuthState>()(
         try {
           set({ loading: true });
 
-          const response = await api.post("/auth/login", data);
+          const response = await api.post<ApiResponse<{ accessToken: string; user: User }>>("/auth/login", data);
 
           set({
-            accessToken: response.data.accessToken,
-            user: response.data.user,
+            accessToken: response.data.data.accessToken,
+            user: response.data.data.user,
             loading: false,
           });
         } catch (error) {
@@ -76,10 +77,10 @@ export const useAuthStore = create<AuthState>()(
 
       refreshToken: async () => {
         try {
-          const response = await api.post("/auth/refresh-token");
+          const response = await api.post<ApiResponse<{ accessToken: string }>>("/auth/refresh-token");
 
           set({
-            accessToken: response.data.accessToken,
+            accessToken: response.data.data.accessToken,
           });
         } catch (error) {
           set({

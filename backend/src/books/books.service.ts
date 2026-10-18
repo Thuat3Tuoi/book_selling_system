@@ -1,15 +1,9 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
-
+import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
-
 import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
-
 import { Prisma, type Book } from "../generated/prisma/client.js";
-
 import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
-
 import { SearchService } from "../search/search.service.js";
-
 import { RedisService } from "../redis/redis.service.js";
 
 @Injectable()
@@ -46,7 +40,7 @@ export class BooksService {
 
         await this.syncToSearch(book, "index");
 
-        // Danh sách sách đã thay đổi
+        // Danh sách sách đã thay đổi -> Xóa cache phân trang
         await this.redis.delete("books:list");
 
         return book;
@@ -58,7 +52,6 @@ export class BooksService {
 
     getBooks = async (page = 1, limit = 10) => {
         const skip = (page - 1) * limit;
-
         const cacheKey = `books:page:${page}:limit:${limit}`;
 
         // 1. Kiểm tra Redis
@@ -66,7 +59,6 @@ export class BooksService {
 
         if (cachedBooks) {
             this.logger.log(`CACHE HIT: ${cacheKey}`);
-
             return cachedBooks;
         }
 
@@ -84,7 +76,6 @@ export class BooksService {
                     id: "desc",
                 },
             }),
-
             this.prismaService.book.count({
                 where: {
                     status: "ACTIVE",
@@ -121,7 +112,6 @@ export class BooksService {
 
         if (cachedBook) {
             this.logger.log(`CACHE HIT: ${cacheKey}`);
-
             return cachedBook;
         }
 
@@ -149,6 +139,7 @@ export class BooksService {
     // =========================
 
     updateBook = async (bookId: number, updateBookDto: UpdateBookDto): Promise<Book> => {
+        // Kiểm tra sách tồn tại
         await this.getBookById(bookId);
 
         const data: Prisma.BookUpdateInput = {
@@ -170,9 +161,10 @@ export class BooksService {
             data,
         });
 
-        await this.syncToSearch(book, "index");
+        // Sách bị chuyển sang INACTIVE thì gỡ khỏi chỉ mục tìm kiếm
+        await this.syncToSearch(book, book.status === "ACTIVE" ? "index" : "remove");
 
-        // Xóa cache của book
+        // Xóa cache chi tiết sách
         await this.redis.delete(`book:${bookId}`);
 
         // Xóa cache danh sách
@@ -213,9 +205,11 @@ export class BooksService {
     // =========================
 
     reduceBookStock = async (tx: Prisma.TransactionClient, bookId: number, quantity: number) => {
-        return await tx.book.update({
+        const result = await tx.book.updateMany({
             where: {
                 id: bookId,
+                status: "ACTIVE",
+                stockQuantity: { gte: quantity },
             },
             data: {
                 stockQuantity: {
@@ -223,6 +217,13 @@ export class BooksService {
                 },
             },
         });
+
+        if (result.count === 0) {
+            throw new BadRequestException(`Sách ${bookId} không đủ tồn kho hoặc không còn hoạt động.`);
+        }
+
+        // Tồn kho thay đổi nên cache chi tiết sách không còn đúng
+        await this.redis.delete(`book:${bookId}`);
     };
 
     // =========================
@@ -240,7 +241,7 @@ export class BooksService {
     };
 
     // =========================
-    // MEILISEARCH
+    // MEILISEARCH HELPER
     // =========================
 
     private syncToSearch = async (book: Book, action: "index" | "remove"): Promise<void> => {

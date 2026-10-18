@@ -23,7 +23,8 @@
         "test:cov": "vitest run --coverage",
         "test:debug": "vitest --inspect-brk --no-file-parallelism",
         "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
-        "reindex": "node dist/scripts/reindex.js"
+        "reindex": "node dist/scripts/reindex.js",
+        "evidence": "node scripts/collect-evidence.mjs"
     },
     "dependencies": {
         "@keyv/redis": "^5.1.6",

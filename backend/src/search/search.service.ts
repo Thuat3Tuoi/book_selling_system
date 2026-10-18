@@ -124,7 +124,8 @@ export class SearchService {
         const limit = options.limit ?? 20;
         const offset = (page - 1) * limit;
 
-        const filter = options.category ? `category = "${options.category}"` : undefined;
+        const escapedCategory = options.category?.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const filter = escapedCategory ? `category = "${escapedCategory}"` : undefined;
 
         const result = await this.index.search<BookSearchDocument>(query, {
             limit,

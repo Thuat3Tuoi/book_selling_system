@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
 
 export class UpdateBookDto {
     @IsOptional() @IsString() title?: string;
@@ -6,8 +6,8 @@ export class UpdateBookDto {
     @IsOptional() @IsString() description?: string;
     @IsOptional() @IsString() author?: string;
     @IsOptional() @IsString() category?: string;
-    @IsOptional() @IsNumber() price?: number;
-    @IsOptional() @IsNumber() @Min(0) stockQuantity?: number;
+    @IsOptional() @IsNumber() @Min(0) price?: number;
+    @IsOptional() @IsInt() @Min(0) stockQuantity?: number;
     @IsOptional() @IsString() coverImageUrl?: string;
-    @IsOptional() @IsString() status?: string;
+    @IsOptional() @IsIn(["ACTIVE", "INACTIVE"]) status?: string;
 }

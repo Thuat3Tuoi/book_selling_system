@@ -132,7 +132,7 @@ export class OrdersService {
 
         // 5. Gửi sự kiện RabbitMQ
         this.rabbitmq.emit("order.created", order).subscribe({
-            error: (error) => {
+            error: (error: unknown) => {
                 console.error("Không thể gửi sự kiện order.created:", error);
             },
         });

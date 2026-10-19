@@ -9,8 +9,8 @@
 - Migration `20261020000000_book_search_sync` thêm bảng `BookSearchSync`. Tạo/sửa/ngừng bán sách lưu cả sách và yêu cầu đồng bộ search trong **cùng transaction PostgreSQL**. Worker nhận lease, thử lại theo backoff tối đa 5 phút, và chỉ xóa yêu cầu sau khi tác vụ Meilisearch hoàn tất. Bài test unit kiểm tra lỗi, retry, sách inactive và revision mới.
 - Thử gián đoạn thật trên project audit riêng `bookaudit20261019`: dừng Meilisearch, sửa sách và ghi yêu cầu đồng bộ trong một transaction trên **database audit**; worker ghi `attempts=1` và giữ bản ghi. Bật Meilisearch lại: tìm đúng tiêu đề mới và hàng đợi về `0` sau lần kiểm tra đầu tiên. Thử này kiểm tra đường retry của worker; E2E ở trên kiểm tra đường tạo/sửa sách qua HTTP khi các dịch vụ hoạt động.
 - Gitleaks v8.30.1 quét toàn bộ patch history với `--log-opts=--all`, **47 commit patch, khoảng 2,59 MB**. Có 1 finding ở `backend/README.md:5` của commit khởi tạo `bf3ee2d`: tham số `token` trong badge CircleCI công khai của **upstream `nestjs/nest`**, dài 12 ký tự, không thuộc API hay dịch vụ của project; giá trị đã được che khi kiểm tra và không ghi vào báo cáo. Không có finding khác. `.env` và `frontend/.env.local` bị Git ignore, `.env.example` có sẵn và backend kiểm tra biến môi trường bắt buộc khi khởi động. Kết quả quét theo rule không chứng minh tuyệt đối mọi secret đều vắng mặt.
-- Hai workflow trước thay đổi search đã hoàn tất thành công: [code SHA `2a07301`, run #79](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39278199124) và [báo cáo SHA `b9d62e9`, run #80](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39279124870). Workflow có backend lint/build/test và frontend build. CI cho thay đổi 20/10 cần chạy trên SHA mới sau khi push.
-- Hai image Docker build từ source `2a07301` và `b9d62e9` có cùng toàn bộ RootFS layer và history; digest config khác nhau vì Compose gắn label `com.docker.compose.*`. Image mới từ working tree chạy healthy và E2E qua, nhưng cần gắn kết quả với SHA commit mới trước khi chốt E1.
+- [GitHub Actions run #81 của code SHA `03e3e3eb33459f5339aadbe1083786d4221fd2bd`](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39350690325) đã **success** (backend và frontend). Hai run trước [#79](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39278199124) và [#80](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39279124870) cũng thành công. Workflow có backend lint/build/test và frontend build.
+- Clone sạch code SHA `03e3e3e` build runtime image `sha256:6eda540286d28b50f8105c582204ff7006b7433382709a245db714231bf11333`. Compose image đã chạy E2E là `sha256:f9a182dd63f57abe36b4b385ba7a53aee48d7cb2f28d5e3d27f4ab6c019f03ef`; **toàn bộ RootFS layer và image history giống nhau**. Digest config khác vì Compose gắn label `com.docker.compose.*`. Container healthy, HTTP và E2E đã qua.
 
 ## Đối chiếu 23 tiêu chí
 
@@ -33,14 +33,14 @@
 | D2 Reproducibility | 🟡 | ✅ | Clone sạch SHA cũ và Compose một lệnh; project mới lên từ database trống |
 | D3 Secret management | 🟡 | ✅ | Env/ignore/validation và Gitleaks history; 1 badge upstream đã phân loại |
 | D4 Testing | 🟡 | ✅ | 191 unit/API + 15 E2E; 4 test mới cho retry search |
-| D5 GitHub Actions | 🟡 | 🟡 | Run #79/#80 thành công; cần run cho SHA mới |
+| D5 GitHub Actions | 🟡 | ✅ | Run #81 của code SHA `03e3e3e` success, backend/frontend đều qua |
 | D6 OWASP source review | 🟡 | ✅ | Ownership/RBAC, ORM, CORS/Origin, React escaping, lỗi 500, bỏ log địa chỉ giao hàng; đây là review mã và cấu hình, không thay thế pentest |
 | D7 Documentation | 🟡 | ✅ | README, Swagger/OpenAPI, hướng dẫn recovery search |
 | D8 AI Disclosure | ✅ | ✅ | `backend/docs/AI_DISCLOSURE.md`; nhóm xác nhận mức dùng thực tế |
-| E1 Docker/Compose | 🟡 | 🟡 | Image working tree healthy, migration 10/10; cần build từ SHA mới |
-| E2 Actions | 🟡 | 🟡 | Cùng run với D5; cần run cho SHA mới |
+| E1 Docker/Compose | 🟡 | ✅ | Clone sạch `03e3e3e`, image layer khớp Compose runtime, healthy, migration 10/10 |
+| E2 Actions | 🟡 | ✅ | Cùng run #81 với D5 |
 
-**Tạm thời: 19 ✅, 4 🟡, 0 ❌.** D1 cần người trong nhóm review thực tế. D5/E1/E2 chỉ nâng khi có commit, image và CI tương ứng; không lấy run của SHA cũ làm bằng chứng cho thay đổi mới.
+**Sau khi chốt code SHA: 22 ✅, 1 🟡, 0 ❌.** D1 vẫn cần người trong nhóm review thực tế; commit và CI không chứng minh đã có review chéo hoặc branch protection.
 
 ## Giới hạn còn lại
 

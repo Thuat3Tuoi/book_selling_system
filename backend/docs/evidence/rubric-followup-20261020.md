@@ -11,6 +11,7 @@
 - Gitleaks v8.30.1 quét toàn bộ patch history với `--log-opts=--all`, **47 commit patch, khoảng 2,59 MB**. Có 1 finding ở `backend/README.md:5` của commit khởi tạo `bf3ee2d`: tham số `token` trong badge CircleCI công khai của **upstream `nestjs/nest`**, dài 12 ký tự, không thuộc API hay dịch vụ của project; giá trị đã được che khi kiểm tra và không ghi vào báo cáo. Không có finding khác. `.env` và `frontend/.env.local` bị Git ignore, `.env.example` có sẵn và backend kiểm tra biến môi trường bắt buộc khi khởi động. Kết quả quét theo rule không chứng minh tuyệt đối mọi secret đều vắng mặt.
 - [GitHub Actions run #81 của code SHA `03e3e3eb33459f5339aadbe1083786d4221fd2bd`](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39350690325) đã **success** (backend và frontend). Hai run trước [#79](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39278199124) và [#80](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39279124870) cũng thành công. Workflow có backend lint/build/test và frontend build.
 - Clone sạch code SHA `03e3e3e` build runtime image `sha256:6eda540286d28b50f8105c582204ff7006b7433382709a245db714231bf11333`. Compose image đã chạy E2E là `sha256:f9a182dd63f57abe36b4b385ba7a53aee48d7cb2f28d5e3d27f4ab6c019f03ef`; **toàn bộ RootFS layer và image history giống nhau**. Digest config khác vì Compose gắn label `com.docker.compose.*`. Container healthy, HTTP và E2E đã qua.
+- Đã mở [draft PR #12](https://github.com/Thuat3Tuoi/book_selling_system/pull/12). API GitHub xác nhận `main.protected=true`: cần 1 reviewer khác người push gần nhất, hai check `backend`/`frontend` thành công, nhánh cập nhật với main, áp dụng cả admin; chặn force push và xóa nhánh. PR hiện chưa có review chéo, chưa merge.
 
 ## Đối chiếu 23 tiêu chí
 
@@ -29,7 +30,7 @@
 | C2.1 RabbitMQ | 🟡 | ✅ | Order outbox, retry, consumer idempotency, DLQ; broker outage đã thử |
 | C2.2 Cron | 🟡 | ✅ | Múi giờ `Asia/Ho_Chi_Minh`, hai instance một notification không rỗng |
 | C4 Meilisearch | 🟡 | ✅ | Full-text/filter, create/update/delete, `BookSearchSync` tự retry sau outage |
-| D1 Git workflow | 🟡 | 🟡 | Nhánh audit có commit/CI; chưa có review chéo hoặc branch protection được xác nhận |
+| D1 Git workflow | 🟡 | 🟡 | Draft PR #12 và branch protection đã xác minh; còn chờ reviewer phê duyệt thật |
 | D2 Reproducibility | 🟡 | ✅ | Clone sạch SHA cũ và Compose một lệnh; project mới lên từ database trống |
 | D3 Secret management | 🟡 | ✅ | Env/ignore/validation và Gitleaks history; 1 badge upstream đã phân loại |
 | D4 Testing | 🟡 | ✅ | 191 unit/API + 15 E2E; 4 test mới cho retry search |
@@ -40,11 +41,11 @@
 | E1 Docker/Compose | 🟡 | ✅ | Clone sạch `03e3e3e`, image layer khớp Compose runtime, healthy, migration 10/10 |
 | E2 Actions | 🟡 | ✅ | Cùng run #81 với D5 |
 
-**Sau khi chốt code SHA: 22 ✅, 1 🟡, 0 ❌.** D1 vẫn cần người trong nhóm review thực tế; commit và CI không chứng minh đã có review chéo hoặc branch protection.
+**Sau khi chốt code SHA: 22 ✅, 1 🟡, 0 ❌.** D1 vẫn cần người trong nhóm review thực tế; việc mở PR và cấu hình branch protection không tự tạo ra bằng chứng review chéo.
 
 ## Giới hạn còn lại
 
 - `BookSearchSync` chỉ ghi cho thay đổi sách đi qua API. Nếu mất toàn bộ index Meilisearch, chạy seed hoặc sửa trực tiếp PostgreSQL, vẫn cần `docker compose --profile tools run --rm search-reindex`. Trong lúc dịch vụ search dừng, API tìm kiếm không khả dụng.
 - Outbox order là giao nhận ít nhất một lần, consumer giữ idempotency; DLQ cần người vận hành xem và quyết định replay. Không tuyên bố exactly-once.
-- Chưa có review chéo/branch protection xác nhận cho nhánh audit; chưa thực hiện pentest độc lập. Các kết quả benchmark, outage và E2E chỉ đại diện cho môi trường audit cô lập.
+- PR #12 còn ở dạng draft và chưa có review chéo. Chưa thực hiện pentest độc lập. Các kết quả benchmark, outage và E2E chỉ đại diện cho môi trường audit cô lập.
 - Không cài dependency mới. Migration mới đã áp dụng trên database audit, chưa áp dụng trên database mặc định của người dùng.

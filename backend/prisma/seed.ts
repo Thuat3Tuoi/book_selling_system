@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as bcrypt from "bcrypt";
-import { OrderStatus, Prisma, PrismaClient } from "../src/generated/prisma/client.js";
+import { BookStatus, NotificationType, OrderStatus, Prisma, PrismaClient, RoleName } from "../src/generated/prisma/client.js";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -19,8 +19,11 @@ const coverUrl = (isbn: string) => `https://covers.openlibrary.org/b/isbn/${isbn
 
 async function main() {
     console.log("🌱 Bắt đầu tạo dữ liệu mẫu...");
+    if (process.env.SEED_RESET_DATA !== "YES_I_UNDERSTAND") {
+        throw new Error("Seed nay xoa du lieu. Chi chay voi SEED_RESET_DATA=YES_I_UNDERSTAND tren database thu nghiem.");
+    }
     if (!DEFAULT_PASSWORD) {
-        throw new Error("DEFAULT_PASSWORD khong ton tai trong moi truong");
+        throw new Error("SEED_DEFAULT_PASSWORD khong ton tai trong moi truong");
     }
 
     const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
@@ -32,6 +35,7 @@ async function main() {
             await tx.$executeRaw`
             TRUNCATE TABLE
                 "Notification",
+                "OutboxEvent",
                 "OrderItem",
                 "Order",
                 "CartItem",
@@ -44,13 +48,13 @@ async function main() {
         `;
 
             const adminRole = await tx.role.create({
-                data: { roleName: "ADMIN", status: true },
+                data: { roleName: RoleName.ADMIN, status: true },
             });
             const customerRole = await tx.role.create({
-                data: { roleName: "CUSTOMER", status: true },
+                data: { roleName: RoleName.CUSTOMER, status: true },
             });
             const staffRole = await tx.role.create({
-                data: { roleName: "STAFF", status: true },
+                data: { roleName: RoleName.STAFF, status: true },
             });
 
             const users = await Promise.all([
@@ -247,7 +251,7 @@ async function main() {
                             ...book,
                             price: money(book.price),
                             coverImageUrl: coverUrl(book.isbn),
-                            status: "ACTIVE",
+                            status: BookStatus.ACTIVE,
                             createdAt: date(
                                 `2026-01-${String(index + 10).padStart(2, "0")}T02:00:00.000Z`
                             ),
@@ -376,42 +380,42 @@ async function main() {
             await tx.notification.createMany({
                 data: [
                     {
-                        notifyType: "ORDER_COMPLETED",
+                        notifyType: NotificationType.ORDER_COMPLETED,
                         userId: getUser("minh.tran@example.com").id,
                         message: `Đơn hàng #${orders[0].id} đã được giao thành công. Cảm ơn bạn đã mua hàng!`,
                         status: false,
                         createdAt: date("2026-07-15T09:00:00.000Z"),
                     },
                     {
-                        notifyType: "ORDER_SHIPPING",
+                        notifyType: NotificationType.ORDER_SHIPPING,
                         userId: getUser("thao.le@example.com").id,
                         message: `Đơn hàng #${orders[1].id} đang được giao đến địa chỉ của bạn.`,
                         status: true,
                         createdAt: date("2026-09-24T02:00:00.000Z"),
                     },
                     {
-                        notifyType: "ORDER_CONFIRMED",
+                        notifyType: NotificationType.ORDER_CONFIRMED,
                         userId: getUser("hoang.vo@example.com").id,
                         message: `Đơn hàng #${orders[2].id} đã được xác nhận và đang chờ đóng gói.`,
                         status: true,
                         createdAt: date("2026-09-23T05:00:00.000Z"),
                     },
                     {
-                        notifyType: "ORDER_CREATED",
+                        notifyType: NotificationType.ORDER_CREATED,
                         userId: getUser("mai.do@example.com").id,
                         message: `Đơn hàng #${orders[3].id} đã được tạo và đang chờ xác nhận.`,
                         status: true,
                         createdAt: date("2026-09-25T02:16:00.000Z"),
                     },
                     {
-                        notifyType: "ORDER_CANCELLED",
+                        notifyType: NotificationType.ORDER_CANCELLED,
                         userId: getUser("minh.tran@example.com").id,
                         message: `Đơn hàng #${orders[4].id} đã được hủy theo yêu cầu.`,
                         status: false,
                         createdAt: date("2026-09-15T10:10:00.000Z"),
                     },
                     {
-                        notifyType: "SYSTEM",
+                        notifyType: NotificationType.SYSTEM,
                         userId: getUser("thao.le@example.com").id,
                         message:
                             "Chào mừng bạn đến với Book Store. Chúc bạn tìm được cuốn sách yêu thích!",

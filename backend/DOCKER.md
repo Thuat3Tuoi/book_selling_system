@@ -28,6 +28,19 @@ Backend mặc định chạy tại `http://localhost:3001`. Có thể thay đổ
 
 Prisma migration được tự động thực thi trước khi backend khởi động.
 
+Nếu cần tài khoản mẫu trên **database phát triển tách biệt**, đặt
+`SEED_DEFAULT_PASSWORD` và `SEED_SAMPLE_DATA=YES` trong `.env`, rồi chạy:
+
+```bash
+docker compose --profile tools run --rm seed-safe
+```
+
+Lệnh này chỉ thêm bản ghi mẫu còn thiếu. Không chạy seed trên database production.
+
+Khi index tìm kiếm bị lệch sau lỗi Meilisearch, chạy `docker compose --profile tools run --rm search-reindex`. Lệnh này **xóa toàn bộ tài liệu trong index sách và tạo lại từ các sách ACTIVE**, nên search có thể tạm thời thiếu kết quả trong lúc rebuild. Không chạy đồng thời với thao tác ghi sách.
+
+Outbox đơn hàng retry khi broker gián đoạn; thông báo dùng `eventId` duy nhất để không tạo trùng khi message được phát lại. Message consumer lỗi chuyển vào queue `.outbox-v1.dlq` để người vận hành kiểm tra. Redis lỗi thì request đọc dùng PostgreSQL; khi Redis trở lại, các key cần invalidation được xóa trước khi dùng cache lại.
+
 ### 3. Kiểm tra hoạt động
 
 Khi backend đạt trạng thái `healthy`, kiểm tra:
@@ -37,6 +50,8 @@ http://localhost:3001/health
 ```
 
 Endpoint kiểm tra PostgreSQL, Redis và Meilisearch. RabbitMQ được kiểm tra qua container health check và kết nối microservice.
+
+`npm run test:e2e` cần database thử nghiệm riêng và `E2E_ISOLATED_DB=YES`; file `test/runtime.e2e-spec.ts` còn cần `E2E_BASE_URL` và `E2E_SAMPLE_PASSWORD` để gọi API container. Xem [báo cáo kiểm chứng runtime](docs/evidence/runtime-verification-20261019.md) để biết phạm vi đã chạy.
 
 ### 4. Các lệnh thường dùng
 

@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "../prisma/prisma.service.js";
 import { CreateUserDto } from "./dto/create-user.dto.js";
 import * as bcrypt from "bcrypt";
+import { RoleName } from "../generated/prisma/enums.js";
 @Injectable()
 export class UserService {
     constructor(private readonly prisma: PrismaService) {}
@@ -17,6 +18,11 @@ export class UserService {
         }
 
         const passwordHash = await bcrypt.hash(data.password, 10);
+        await this.prisma.role.upsert({
+            where: { roleName: RoleName.CUSTOMER },
+            create: { roleName: RoleName.CUSTOMER },
+            update: {},
+        });
         await this.prisma.user.create({
             data: {
                 firstName: data.firstName,
@@ -25,6 +31,7 @@ export class UserService {
                 passwordHash: passwordHash,
                 phoneNumber: data?.phoneNumber,
                 address: data?.address,
+                role: { connect: { roleName: RoleName.CUSTOMER } },
             },
         });
         return {
@@ -37,6 +44,13 @@ export class UserService {
             where: {
                 email,
             },
+        });
+    }
+
+    findAuthPrincipalByEmail(email: string) {
+        return this.prisma.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, status: true, role: { select: { roleName: true, status: true } } },
         });
     }
 
@@ -64,7 +78,7 @@ export class UserService {
             return null;
         }
         const status = await bcrypt.compare(password, user.passwordHash);
-        if (status) {
+        if (status && user.status) {
             // xóa passwordHash trước khi trả về user
             const { passwordHash: _passwordHash, ...safeUser } = user;
             return safeUser;
@@ -76,8 +90,11 @@ export class UserService {
         const session = await this.prisma.session.findFirst({
             where: {
                 ref,
+                expires: { gt: new Date() },
                 user: {
                     id: userId,
+                    status: true,
+                    role: { status: true },
                 },
             },
             include: {

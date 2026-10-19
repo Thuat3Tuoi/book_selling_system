@@ -5,6 +5,12 @@ import { Prisma, type Book } from "../generated/prisma/client.js";
 import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
 import { SearchService } from "../search/search.service.js";
 import { RedisService } from "../redis/redis.service.js";
+import { BookStatus } from "../generated/prisma/enums.js";
+
+enum SearchSyncAction {
+    INDEX = "index",
+    REMOVE = "remove",
+}
 
 @Injectable()
 export class BooksService {
@@ -34,14 +40,14 @@ export class BooksService {
                 stockQuantity: createBookDto.stockQuantity,
                 coverImageUrl: createBookDto.coverImageUrl,
                 price: new Prisma.Decimal(createBookDto.price),
-                status: "ACTIVE",
+                status: BookStatus.ACTIVE,
             },
         });
 
-        await this.syncToSearch(book, "index");
+        await this.syncToSearch(book, SearchSyncAction.INDEX);
 
         // Danh sách sách đã thay đổi -> Xóa cache phân trang
-        await this.redis.delete("books:list");
+        await this.redis.deleteByPattern("books:page:*");
 
         return book;
     };
@@ -68,7 +74,7 @@ export class BooksService {
         const [books, total] = await Promise.all([
             this.prismaService.book.findMany({
                 where: {
-                    status: "ACTIVE",
+                    status: BookStatus.ACTIVE,
                 },
                 skip,
                 take: limit,
@@ -78,7 +84,7 @@ export class BooksService {
             }),
             this.prismaService.book.count({
                 where: {
-                    status: "ACTIVE",
+                    status: BookStatus.ACTIVE,
                 },
             }),
         ]);
@@ -124,7 +130,7 @@ export class BooksService {
             },
         });
 
-        if (!book || book.status !== "ACTIVE") {
+        if (!book || book.status !== BookStatus.ACTIVE) {
             throw new NotFoundException("Không tìm thấy sách");
         }
 
@@ -162,13 +168,14 @@ export class BooksService {
         });
 
         // Sách bị chuyển sang INACTIVE thì gỡ khỏi chỉ mục tìm kiếm
-        await this.syncToSearch(book, book.status === "ACTIVE" ? "index" : "remove");
+        await this.syncToSearch(book, book.status === BookStatus.ACTIVE ? SearchSyncAction.INDEX : SearchSyncAction.REMOVE);
 
         // Xóa cache chi tiết sách
         await this.redis.delete(`book:${bookId}`);
 
         // Xóa cache danh sách
-        await this.redis.delete("books:list");
+        await this.redis.deleteByPattern("books:page:*");
+        await this.redis.deleteByPattern("cart:user:*");
 
         return book;
     };
@@ -185,17 +192,18 @@ export class BooksService {
                 id: bookId,
             },
             data: {
-                status: "INACTIVE",
+                status: BookStatus.INACTIVE,
             },
         });
 
-        await this.syncToSearch(book, "remove");
+        await this.syncToSearch(book, SearchSyncAction.REMOVE);
 
         // Xóa cache chi tiết
         await this.redis.delete(`book:${bookId}`);
 
         // Xóa cache danh sách
-        await this.redis.delete("books:list");
+        await this.redis.deleteByPattern("books:page:*");
+        await this.redis.deleteByPattern("cart:user:*");
 
         return book;
     };
@@ -208,7 +216,7 @@ export class BooksService {
         const result = await tx.book.updateMany({
             where: {
                 id: bookId,
-                status: "ACTIVE",
+                status: BookStatus.ACTIVE,
                 stockQuantity: { gte: quantity },
             },
             data: {
@@ -223,7 +231,6 @@ export class BooksService {
         }
 
         // Tồn kho thay đổi nên cache chi tiết sách không còn đúng
-        await this.redis.delete(`book:${bookId}`);
     };
 
     // =========================
@@ -233,6 +240,7 @@ export class BooksService {
     getLowStockBook = async () => {
         return this.prismaService.book.findMany({
             where: {
+                status: BookStatus.ACTIVE,
                 stockQuantity: {
                     lte: 10,
                 },
@@ -244,9 +252,9 @@ export class BooksService {
     // MEILISEARCH HELPER
     // =========================
 
-    private syncToSearch = async (book: Book, action: "index" | "remove"): Promise<void> => {
+    private syncToSearch = async (book: Book, action: SearchSyncAction): Promise<void> => {
         try {
-            if (action === "index") {
+            if (action === SearchSyncAction.INDEX) {
                 await this.searchService.indexBook(book);
             } else {
                 await this.searchService.removeBookFromIndex(book.id);

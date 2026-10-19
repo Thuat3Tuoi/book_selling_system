@@ -1,13 +1,16 @@
 import { api } from "@/lib/api";
-import type { Book } from "@/lib/types";
+import type { ApiResponse, Book } from "@/lib/types";
 import BookCard from "@/components/BookCard";
+
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   let books: Book[] = [];
   let loadError = false;
 
   try {
-    books = await api.getBooks();
+    const response = await api.get<ApiResponse<Book[]>>("/books");
+    books = response.data.data;
   } catch {
     loadError = true;
   }

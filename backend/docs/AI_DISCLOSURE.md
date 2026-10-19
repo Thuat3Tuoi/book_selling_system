@@ -130,3 +130,13 @@ Workflow `Backend CI` (`.github/workflows/backend-ci.yml`) chạy trên push và
 | 2 | Đặt file unit test trong thư mục `test/` | Spec của các module khác nằm cạnh code trong `src/` | Chuyển về `src/user/dto/` và `src/auth/dto/` |
 | 3 | Test login dùng user seed sẵn mà không kiểm tra có trong DB | Chạy test bị `401` | Viết hàm tạo user tạm ở `beforeAll` và dọn ở `afterAll` |
 
+## 6. Bổ sung cho lượt audit rubric ngày 19/10/2026
+
+AI hỗ trợ đọc mã nguồn và rubric, lập [bảng đối chiếu 23 tiêu chí](evidence/rubric-audit-20261019.md), sửa validation phân trang, refresh token, CORS, cron, đồng bộ search, seed mẫu, Docker Compose, Swagger và tài liệu. AI cũng hỗ trợ tạo unit/API test, cập nhật Prisma lên bản vá và loại bỏ dependency dev không dùng. Nhóm cần tự review các thay đổi trước khi commit hoặc nộp.
+
+Kiểm chứng trong lượt này: `npm ci`, Prisma generate/validate, backend lint/build, 185/185 test, frontend build, Compose config và `npm audit` đều đạt. Coverage ở mốc 185 test: 77,72% statements, 66,05% branches; công cụ chỉ tính file được import. **Không chạy E2E với database, migration, seed hay Docker runtime trong lượt audit này** vì Docker daemon không kết nối được và không có database thử nghiệm tách biệt. Kết quả E2E ở mục 4.2 là ghi nhận lịch sử của một lượt chạy khác, không được xem là bằng chứng cho working tree hiện tại.
+
+## 7. Lượt tiếp nối kiểm chứng runtime ngày 19/10/2026
+
+Codex tiếp tục hỗ trợ sửa lockfile Docker, DI guard, retry outbox, cache Redis, CSRF cho cookie, schema phản hồi Swagger, test luồng mua hàng và kiểm chứng trong Compose project tách biệt. AI đã chạy migration/seed và tạo dữ liệu benchmark **chỉ trên database thử nghiệm `bookaudit` mới**, không truy cập database đang chạy của dự án. Kết quả trực tiếp: 187/187 unit/API test, 15/15 E2E, Docker health, EXPLAIN ANALYZE và các phép thử broker/Redis/search trong [báo cáo runtime](evidence/runtime-verification-20261019.md). Nhóm vẫn cần review thay đổi và xác nhận mức sử dụng AI thực tế trước khi nộp.
+

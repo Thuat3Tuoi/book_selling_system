@@ -1,20 +1,20 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { OrderCreaterRequest } from "./dtos/order-creation-request.dto.js";
 import { OrderStatus, Prisma, type Order } from "../generated/prisma/client.js";
 import type { OrderUpdateRequest } from "./dtos/order-update-request.dto.js";
 import type { OrderUpdateStatusRequest } from "./dtos/order-update-status-request.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { BooksService } from "../books/books.service.js";
-import type { ClientProxy } from "@nestjs/microservices";
 import { RedisService } from "../redis/redis.service.js";
+import { BookStatus, OutboxEventType } from "../generated/prisma/enums.js";
 
 @Injectable()
 export class OrdersService {
+    private readonly logger = new Logger(OrdersService.name);
     constructor(
         private readonly prismaService: PrismaService,
         private readonly bookService: BooksService,
         private readonly redis: RedisService,
-        @Inject("RABBITMQ") private readonly rabbitmq: ClientProxy
     ) {}
 
     createOrder = async (
@@ -55,7 +55,7 @@ export class OrdersService {
             const books = await tx.book.findMany({
                 where: {
                     id: { in: bookIds },
-                    status: "ACTIVE",
+                    status: BookStatus.ACTIVE,
                 },
             });
 
@@ -113,6 +113,10 @@ export class OrdersService {
                 },
             });
 
+            await tx.outboxEvent.create({
+                data: { eventType: OutboxEventType.ORDER_CREATED, payload: { orderId: createdOrder.id, userId } },
+            });
+
             const cart = await tx.cart.findUnique({
                 where: { userId },
                 select: { id: true },
@@ -128,21 +132,22 @@ export class OrdersService {
         });
 
         // 4. Transaction thành công: xóa cache
-        await this.redis.delete(`cart:user:${userId}`);
-
-        // 5. Gửi sự kiện RabbitMQ
-        this.rabbitmq.emit("order.created", order).subscribe({
-            error: (error: unknown) => {
-                console.error("Không thể gửi sự kiện order.created:", error);
-            },
-        });
+        try {
+            await this.redis.delete(`cart:user:${userId}`);
+            await this.redis.deleteMany(...bookIds.map((id) => `book:${id}`));
+            await this.redis.deleteByPattern("books:page:*");
+            await this.redis.deleteByPattern("cart:user:*");
+        } catch (error) {
+            this.logger.error(`Order ${order.id} committed but cache invalidation failed: ${String(error)}`);
+        }
 
         return order;
     };
 
-    getOrderById = async (orderId: number): Promise<Order> => {
-        const order = await this.prismaService.order.findUnique({
-            where: { id: orderId },
+    getOrderById = async (orderId: number, userId: number): Promise<Order> => {
+        const order = await this.prismaService.order.findFirst({
+            where: { id: orderId, userId },
+            include: { orderItems: { include: { book: true } } },
         });
 
         if (!order) {
@@ -152,33 +157,35 @@ export class OrdersService {
         return order;
     };
 
-    getOrders = async (): Promise<Order[]> => {
-        return this.prismaService.order.findMany();
+    getOrders = async (userId: number): Promise<Order[]> => {
+        return this.prismaService.order.findMany({
+            where: { userId },
+            include: { orderItems: { include: { book: true } } },
+            orderBy: { createdAt: "desc" },
+        });
     };
 
     updateOrder = async (
         orderId: number,
-        orderUpdateRequest: OrderUpdateRequest
+        orderUpdateRequest: OrderUpdateRequest,
+        userId: number,
     ): Promise<Order> => {
-        return this.updateOrderData(orderId, orderUpdateRequest);
+        await this.getOrderById(orderId, userId);
+        return this.prismaService.order.update({
+            where: { id: orderId, userId },
+            data: { shippingAddress: orderUpdateRequest.shippingAddress },
+        });
     };
 
     updateStatusOrder = async (
         orderId: number,
         orderUpdateStatusRequest: OrderUpdateStatusRequest
     ): Promise<Order> => {
-        return this.updateOrderData(orderId, orderUpdateStatusRequest);
-    };
-
-    private updateOrderData = async (
-        orderId: number,
-        data: Prisma.OrderUpdateInput
-    ): Promise<Order> => {
-        await this.getOrderById(orderId);
-
+        const order = await this.prismaService.order.findUnique({ where: { id: orderId } });
+        if (!order) throw new NotFoundException("Order not found!");
         return this.prismaService.order.update({
             where: { id: orderId },
-            data,
+            data: { status: orderUpdateStatusRequest.status },
         });
     };
 }

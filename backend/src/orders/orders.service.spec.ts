@@ -5,7 +5,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { BooksService } from "../books/books.service.js";
 import { RedisService } from "../redis/redis.service.js";
 import { Prisma } from "../generated/prisma/client.js";
-import { of } from "rxjs";
+import { OutboxEventType } from "../generated/prisma/enums.js";
 
 vi.mock("../generated/prisma/client.js", () => ({
     PrismaClient: class {},
@@ -61,9 +61,11 @@ describe("OrdersService", () => {
         order: {
             create: vi.fn(),
             findMany: vi.fn(),
+            findFirst: vi.fn(),
             findUnique: vi.fn(),
             update: vi.fn(),
         },
+        outboxEvent: { create: vi.fn() },
         cart: { findUnique: vi.fn() },
         cartItem: { deleteMany: vi.fn() },
     };
@@ -74,17 +76,12 @@ describe("OrdersService", () => {
 
     const redis = {
         delete: vi.fn(),
-    };
-
-    const rabbitmq = {
-        emit: vi.fn(),
+        deleteMany: vi.fn(),
+        deleteByPattern: vi.fn(),
     };
 
     beforeEach(async () => {
         vi.resetAllMocks();
-
-        // Thiết lập mock emit trả về Observable chuẩn của RxJS mỗi khi resetAllMocks chạy
-        rabbitmq.emit.mockReturnValue(of(true));
 
         prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => unknown) => cb(prisma));
 
@@ -94,7 +91,6 @@ describe("OrdersService", () => {
                 { provide: PrismaService, useValue: prisma },
                 { provide: BooksService, useValue: booksService },
                 { provide: RedisService, useValue: redis },
-                { provide: "RABBITMQ", useValue: rabbitmq },
             ],
         }).compile();
 
@@ -130,8 +126,19 @@ describe("OrdersService", () => {
             expect(prisma.order.create).toHaveBeenCalled();
             expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 50 } });
             expect(redis.delete).toHaveBeenCalledWith(`cart:user:${USER_ID}`);
-            expect(rabbitmq.emit).toHaveBeenCalledWith("order.created", createdOrder);
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({
+                data: { eventType: OutboxEventType.ORDER_CREATED, payload: { orderId: ORDER_ID, userId: USER_ID } },
+            });
             expect(result).toBe(createdOrder);
+        });
+
+        it("does not report a failed order after the database commits when Redis fails", async () => {
+            prisma.book.findMany.mockResolvedValue([makeBook()]);
+            prisma.order.create.mockResolvedValue(makeOrder());
+            prisma.cart.findUnique.mockResolvedValue(null);
+            redis.delete.mockRejectedValue(new Error("Redis down"));
+            await expect(service.createOrder(validRequest, USER_ID)).resolves.toMatchObject({ id: ORDER_ID });
+            expect(prisma.outboxEvent.create).toHaveBeenCalledOnce();
         });
 
         it("ném BadRequestException khi danh sách sản phẩm rỗng", async () => {
@@ -167,18 +174,21 @@ describe("OrdersService", () => {
     describe("getOrderById", () => {
         it("trả về đơn hàng nếu tìm thấy", async () => {
             const order = makeOrder();
-            prisma.order.findUnique.mockResolvedValue(order);
+            prisma.order.findFirst.mockResolvedValue(order);
 
-            const result = await service.getOrderById(ORDER_ID);
+            const result = await service.getOrderById(ORDER_ID, USER_ID);
 
             expect(result).toBe(order);
-            expect(prisma.order.findUnique).toHaveBeenCalledWith({ where: { id: ORDER_ID } });
+            expect(prisma.order.findFirst).toHaveBeenCalledWith({
+                where: { id: ORDER_ID, userId: USER_ID },
+                include: { orderItems: { include: { book: true } } },
+            });
         });
 
         it("ném NotFoundException khi không tìm thấy đơn hàng", async () => {
-            prisma.order.findUnique.mockResolvedValue(null);
+            prisma.order.findFirst.mockResolvedValue(null);
 
-            await expect(service.getOrderById(999)).rejects.toBeInstanceOf(NotFoundException);
+            await expect(service.getOrderById(999, USER_ID)).rejects.toBeInstanceOf(NotFoundException);
         });
     });
 
@@ -187,10 +197,31 @@ describe("OrdersService", () => {
             const orders = [makeOrder()];
             prisma.order.findMany.mockResolvedValue(orders);
 
-            const result = await service.getOrders();
+            const result = await service.getOrders(USER_ID);
 
             expect(result).toBe(orders);
-            expect(prisma.order.findMany).toHaveBeenCalled();
+            expect(prisma.order.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: USER_ID } }));
+        });
+    });
+
+    it("does not expose or update another customer's order", async () => {
+        prisma.order.findFirst.mockResolvedValue(null);
+        await expect(service.getOrderById(ORDER_ID, 8)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(service.updateOrder(ORDER_ID, { shippingAddress: "456 Nguyen Hue" }, 8))
+            .rejects.toBeInstanceOf(NotFoundException);
+        expect(prisma.order.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: ORDER_ID, userId: 8 },
+        }));
+        expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it("updates only the owner's shipping address", async () => {
+        prisma.order.findFirst.mockResolvedValue(makeOrder());
+        prisma.order.update.mockResolvedValue(makeOrder());
+        await service.updateOrder(ORDER_ID, { shippingAddress: "456 Nguyen Hue" }, USER_ID);
+        expect(prisma.order.update).toHaveBeenCalledWith({
+            where: { id: ORDER_ID, userId: USER_ID },
+            data: { shippingAddress: "456 Nguyen Hue" },
         });
     });
 

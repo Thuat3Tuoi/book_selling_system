@@ -1,10 +1,13 @@
-import { IsNotEmpty } from "class-validator";
+import { IsEnum, IsInt, IsNotEmpty, IsString, Min } from "class-validator";
+import { NotificationType } from "../../generated/prisma/enums.js";
 
 export class NotificationCreationRequest {
-    notifyType!: string;
+    @IsEnum(NotificationType)
+    notifyType!: NotificationType;
 
+    @IsInt() @Min(1)
     userId!: number;
 
-    @IsNotEmpty()
+    @IsString() @IsNotEmpty()
     message!: string;
 }

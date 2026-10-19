@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 const mockIndex = {
   addDocuments: vi.fn().mockResolvedValue({ taskUid: 1 }),
   deleteDocument: vi.fn().mockResolvedValue({ taskUid: 2 }),
+  deleteAllDocuments: vi.fn().mockResolvedValue({ taskUid: 5 }),
   search: vi.fn().mockResolvedValue({
     hits: [],
     estimatedTotalHits: 0,
@@ -14,6 +15,7 @@ const mockIndex = {
   updateSearchableAttributes: vi.fn().mockResolvedValue({ taskUid: 3 }),
   updateFilterableAttributes: vi.fn().mockResolvedValue({ taskUid: 4 }),
 };
+const waitForTask = vi.fn().mockResolvedValue({ status: "succeeded" });
 
 vi.mock("meilisearch", () => {
   return {
@@ -21,6 +23,7 @@ vi.mock("meilisearch", () => {
       index = vi.fn().mockReturnValue(mockIndex);
       createIndex = vi.fn().mockResolvedValue({ taskUid: 0 });
       health = vi.fn().mockResolvedValue({ status: "available" });
+      tasks = { waitForTask };
     },
   };
 });
@@ -81,6 +84,19 @@ describe('SearchService', () => {
     await service.indexBook(sampleBook);
 
     expect(mockIndex.addDocuments).toHaveBeenCalledWith([service.toSearchDocument(sampleBook)]);
+    expect(waitForTask).toHaveBeenCalledWith(1, expect.objectContaining({ timeout: 10_000 }));
+  });
+
+  it("reports a failed asynchronous indexing task", async () => {
+    waitForTask.mockResolvedValueOnce({ status: "failed" });
+    await expect(service.indexBook(sampleBook)).rejects.toThrow("ended with status failed");
+  });
+
+  it("rebuilds search from active books after removing stale documents", async () => {
+    await service.reindexAll([sampleBook]);
+    expect(mockIndex.deleteAllDocuments).toHaveBeenCalledOnce();
+    expect(mockIndex.addDocuments).toHaveBeenCalledWith([service.toSearchDocument(sampleBook)]);
+    expect(waitForTask).toHaveBeenCalledWith(5, expect.anything());
   });
 
   it("removeBookFromIndex() goi deleteDocument voi dung id", async () => {

@@ -49,6 +49,7 @@ describe("BooksService", () => {
         get: vi.fn(),
         set: vi.fn(),
         delete: vi.fn(),
+        deleteByPattern: vi.fn(),
     };
 
     beforeEach(async () => {
@@ -93,7 +94,7 @@ describe("BooksService", () => {
                 data: expect.objectContaining({ title: dto.title, isbn: dto.isbn, status: "ACTIVE" }),
             });
             expect(search.indexBook).toHaveBeenCalledWith(created);
-            expect(redis.delete).toHaveBeenCalledWith("books:list");
+            expect(redis.deleteByPattern).toHaveBeenCalledWith("books:page:*");
         });
 
         it("vẫn tạo được sách khi Meilisearch bị lỗi", async () => {
@@ -181,7 +182,7 @@ describe("BooksService", () => {
             expect(search.indexBook).toHaveBeenCalledWith(updated);
             expect(search.removeBookFromIndex).not.toHaveBeenCalled();
             expect(redis.delete).toHaveBeenCalledWith("book:1");
-            expect(redis.delete).toHaveBeenCalledWith("books:list");
+            expect(redis.deleteByPattern).toHaveBeenCalledWith("books:page:*");
         });
 
         it("chuyển sang INACTIVE: gỡ sách khỏi chỉ mục tìm kiếm", async () => {
@@ -232,7 +233,7 @@ describe("BooksService", () => {
                 where: { id: 1, status: "ACTIVE", stockQuantity: { gte: 3 } },
                 data: { stockQuantity: { decrement: 3 } },
             });
-            expect(redis.delete).toHaveBeenCalledWith("book:1");
+            expect(redis.delete).not.toHaveBeenCalled();
         });
 
         it("ném BadRequestException khi không đủ tồn kho (không làm tồn kho âm)", async () => {
@@ -250,7 +251,7 @@ describe("BooksService", () => {
             await service.getLowStockBook();
 
             expect(prisma.book.findMany).toHaveBeenCalledWith({
-                where: { stockQuantity: { lte: 10 } },
+                where: { status: "ACTIVE", stockQuantity: { lte: 10 } },
             });
         });
     });

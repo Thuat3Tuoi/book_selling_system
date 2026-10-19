@@ -1,5 +1,7 @@
 # Kiểm chứng runtime tiếp nối audit rubric — 19/10/2026
 
+**Commit mã đã kiểm chứng:** `2a073012add457f5238f05055ee491f4031e54d8`. Clone sạch từ commit này chạy Compose một lệnh với project riêng `bookauditsha2a07301`; backend image digest `sha256:ccd6f53e545ce283bf845ab71eb5a6ad11181baee9659e447263f25f716b38f2`, `/health` 200, `/api-docs-json` 200, migration 9/9 và E2E 15/15. [CI run #79](https://github.com/Thuat3Tuoi/book_selling_system/actions/runs/39278199124) được tạo cho commit này nhưng còn queued khi ghi báo cáo, nên chưa tính là đạt.
+
 Báo cáo này tiếp nối [audit ban đầu](rubric-audit-20261019.md). Môi trường thử nghiệm là Docker Compose project riêng `bookaudit20261019`, dùng volume và cổng riêng (`31011` API, `15432` PostgreSQL, `16379` Redis, `15673` RabbitMQ, `17700` Meilisearch). Các container `book-selling-backend-*` đang có trên máy không được dùng làm nơi thử nghiệm. Mật khẩu thử nghiệm được sinh ngẫu nhiên và giữ ngoài repository. Không có nhận xét tuần 5 trong file chuẩn, nên các trạng thái dưới đây đánh giá bản hiện tại, không gán nhãn đã sửa góp ý cũ.
 
 ## Kết quả đã chạy
@@ -58,21 +60,20 @@ Outbox hiện giữ event `PENDING` và retry với backoff tối đa 5 phút kh
 | C2.2 | 🟡 | ✅ | Hai instance, eventId theo ngày, một notification |
 | C4 | 🟡 | 🟡 | Index/search thực; phục hồi sau lỗi vẫn cần reindex thủ công |
 | D1 | 🟡 | 🟡 | Có Git/PR cũ; chưa có review chéo được xác nhận cho nhánh hiện tại |
-| D2 | 🟡 | 🟡 | Compose riêng đã chạy; chưa kiểm tra clone mới từ SHA chốt |
+| D2 | 🟡 | ✅ | Clone sạch `2a07301`, một lệnh Compose khởi động toàn bộ stack và migration |
 | D3 | 🟡 | 🟡 | Không có `.env`/key track trong HEAD hoặc tên file history; chưa quét toàn bộ blob history |
 | D4 | 🟡 | ✅ | 187 unit/API + 15 E2E trên service thật |
 | D5 | 🟡 | 🟡 | Workflow có test/build cả backend/frontend; chưa có run cho SHA mới |
 | D6 | 🟡 | 🟡 | JWT/RBAC/ownership, cookie Origin, CORS và lỗi 500; chưa có pentest độc lập |
 | D7 | 🟡 | ✅ | README/Swagger; 28/28 operation có response schema |
 | D8 | ✅ | ✅ | AI Disclosure đã có; mức sử dụng thực tế do nhóm xác nhận |
-| E1 | 🟡 | 🟡 | Image/Compose hoạt động trên project audit; cần build lại từ SHA commit |
+| E1 | 🟡 | ✅ | Image build từ clone sạch `2a07301`, healthy, API 200; digest ghi ở đầu báo cáo |
 | E2 | 🟡 | 🟡 | Cùng workflow D5; run cho SHA mới chưa có |
 
-**Tạm thời: 15 ✅, 8 🟡, 0 ❌ trên 23 tiêu chí.** Bảng này chưa nâng D2/E1/CI khi chưa có SHA và run tương ứng. Không xem test chạy trên working tree là bằng chứng image khớp commit.
+**Sau khi chốt SHA: 17 ✅, 6 🟡, 0 ❌ trên 23 tiêu chí.** D5/E2 vẫn chờ GitHub Actions hoàn thành; D1 cần review thật. Báo cáo phân biệt rõ phép thử trên working tree với image build từ clone sạch.
 
 ## Việc cần hoàn tất
 
-1. Chốt commit, build lại image từ SHA đó trong checkout sạch; ghi digest và chạy smoke/E2E tối thiểu.
-2. Chạy GitHub Actions của nhánh mới và ghi link run; review chéo/branch rule do chủ repository xác nhận.
-3. Nếu muốn C4 tự hồi phục, bổ sung hàng đợi đồng bộ search hoặc cơ chế reindex định kỳ có giám sát; hiện manual reindex đã được kiểm chứng.
-4. Quét secret toàn history bằng công cụ chuyên dụng và thực hiện pentest có phạm vi; đây là giới hạn của audit mã nguồn hiện tại.
+1. Chờ GitHub Actions của nhánh mới hoàn tất; review chéo/branch rule do chủ repository xác nhận.
+2. Nếu muốn C4 tự hồi phục, bổ sung hàng đợi đồng bộ search hoặc cơ chế reindex định kỳ có giám sát; hiện manual reindex đã được kiểm chứng.
+3. Quét secret toàn history bằng công cụ chuyên dụng và thực hiện pentest có phạm vi; đây là giới hạn của audit mã nguồn hiện tại.

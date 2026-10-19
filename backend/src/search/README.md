@@ -51,19 +51,23 @@ Khi khởi động, `SearchService` tạo index (nếu chưa có), cấu hình 5
 
 ```text
 Tạo / sửa sách
-    → Lưu vào PostgreSQL
-    → Gửi yêu cầu thêm / cập nhật document trong Meilisearch
+    → Lưu sách và hàng đợi BookSearchSync trong cùng transaction PostgreSQL
+    → Thử cập nhật document trong Meilisearch ngay
 
 Ngừng bán sách
-    → Đổi status thành INACTIVE trong PostgreSQL
-    → Gửi yêu cầu xóa document khỏi Meilisearch
+    → Đổi status thành INACTIVE và ghi hàng đợi trong cùng transaction
+    → Thử xóa document khỏi Meilisearch ngay
+
+Meilisearch gián đoạn
+    → Giữ hàng đợi trong PostgreSQL và thử lại theo backoff, tối đa 5 phút
+    → Xóa hàng đợi khi tác vụ Meilisearch hoàn tất
 
 GET /search/books
     → Backend truy vấn index books
     → Trả kết quả cho client
 ```
 
-Meilisearch xử lý các yêu cầu ghi bằng **tác vụ bất đồng bộ**. Log có `taskUid` chỉ cho biết Meilisearch đã nhận tác vụ, **chưa có nghĩa tác vụ đã hoàn tất**. Vì vậy, sách mới có thể chưa xuất hiện ngay trong kết quả tìm kiếm. Nếu đồng bộ lỗi, `BooksService` ghi log nhưng thao tác lưu PostgreSQL vẫn có thể thành công.
+Meilisearch xử lý các yêu cầu ghi bằng **tác vụ bất đồng bộ**. Backend chờ tác vụ hoàn tất trước khi xóa `BookSearchSync`. Worker chạy mỗi 5 giây, dùng lease để hai instance không cùng xử lý một bản ghi; mỗi lần sửa sách tạo revision mới để kết quả cũ không xóa mất việc cần làm mới. Khi Meilisearch lỗi, thao tác lưu PostgreSQL vẫn thành công và hàng đợi còn lại để thử lại. Nếu cả index mất dữ liệu hoặc sách được ghi trực tiếp vào PostgreSQL, chạy reindex toàn bộ theo phần 5.
 
 ## 2. Bước 1: Khởi chạy hệ thống
 
@@ -263,16 +267,16 @@ docker compose exec -T backend node dist/search/reindex.script.js
 Script sẽ:
 
 1. Lấy **chỉ các sách có `status = ACTIVE`** từ PostgreSQL.
-2. Gửi từng sách vào index `books`.
-3. In số lệnh gửi thành công và thất bại.
+2. Xóa các document cũ trong index `books`, kể cả sách đã chuyển sang `INACTIVE`.
+3. Gửi lại sách theo batch 1.000 document và chờ từng tác vụ Meilisearch hoàn tất. Lệnh trả lỗi nếu một tác vụ thất bại hoặc quá hạn.
 
-Thông báo `dong bo thanh cong` chỉ xác nhận Meilisearch **đã nhận yêu cầu**, không đảm bảo việc lập chỉ mục đã xong. Sau đó, kiểm tra lại:
+Trong lúc xây dựng lại, kết quả tìm kiếm có thể tạm thời chưa đầy đủ. Sau khi lệnh hoàn tất, kiểm tra lại:
 
 ```bash
 curl -fsS 'http://localhost:3001/search/books'
 ```
 
-> **Giới hạn:** Script reindex hiện **không xóa** những document cũ đã không còn tương ứng với sách trong PostgreSQL.
+> **Giới hạn:** Hàng đợi tự thử lại những thay đổi sách đi qua API. Nếu xóa toàn bộ dữ liệu Meilisearch, nhập seed hoặc sửa trực tiếp PostgreSQL, vẫn cần reindex toàn bộ. Trong lúc search gián đoạn, API tìm kiếm trả lỗi và index có thể chậm hơn PostgreSQL.
 
 Nếu backend chạy ngoài Docker, có thể dùng:
 
@@ -289,11 +293,12 @@ Tuy nhiên, máy chạy lệnh phải truy cập được **PostgreSQL và Meili
 | `/health` báo lỗi | Chạy `docker compose ps --all` và kiểm tra log `backend`, `meilisearch`, `postgres`, `redis`. |
 | PostgreSQL có sách nhưng tìm kiếm trả về 0 kết quả | Kiểm tra `status = ACTIVE`; chạy reindex; đợi tác vụ lập chỉ mục hoàn tất rồi tìm lại. |
 | Lọc `category` không có kết quả | Kiểm tra tên thể loại có khớp chính xác với dữ liệu sách không. Hiện chỉ `category` được cấu hình làm thuộc tính lọc. |
-| Vẫn tìm thấy sách đã xóa hoặc ngừng bán | Kiểm tra log `Dong bo Meilisearch that bai`. Script reindex hiện không tự xóa document cũ. |
+| Vẫn tìm thấy sách đã xóa hoặc ngừng bán | Kiểm tra `BookSearchSync` còn bản ghi chờ và trạng thái Meilisearch; nếu index mất dữ liệu hoặc dữ liệu sửa ngoài API, chạy reindex. |
 
 ### Các file mã nguồn liên quan
 
 - [`search.service.ts`](search.service.ts) — cấu hình index, đồng bộ và truy vấn tìm kiếm.
+- [`book-search-sync.service.ts`](book-search-sync.service.ts) — hàng đợi bền vững và retry sau sự cố.
 - [`search.controller.ts`](search.controller.ts) — endpoint tìm kiếm.
 - [`reindex.script.ts`](reindex.script.ts) — script lập chỉ mục lại từ PostgreSQL.
 - [`books.service.ts`](../books/books.service.ts) — xử lý sách và yêu cầu đồng bộ Meilisearch.

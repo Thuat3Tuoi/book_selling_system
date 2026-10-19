@@ -34,7 +34,7 @@ Swagger UI: `/api-docs`; OpenAPI JSON: `/api-docs-json`. [Postman collection](ba
 
 ## Trạng thái xác minh
 
-Trên Compose project thử nghiệm riêng, migration 9/9, backend 187/187 unit/API test và 15/15 E2E đã qua; Redis/RabbitMQ/Meilisearch được thử khi gián đoạn. [Báo cáo runtime mới nhất](backend/docs/evidence/runtime-verification-20261019.md) ghi phép đo `EXPLAIN ANALYZE`, quyền hai tài khoản, broker, cache, search và các giới hạn còn lại. Trước nghiệm thu từ Git vẫn cần build lại image từ SHA đã chốt và xác nhận CI của chính SHA đó. Search có thể lệch khi đồng bộ sau commit thất bại; dùng `docker compose --profile tools run --rm search-reindex` khi Meilisearch phục hồi (lệnh này rebuild toàn bộ index sách). Xem thêm [audit gốc](backend/docs/evidence/rubric-audit-20261019.md).
+Trên Compose project thử nghiệm riêng, migration 10/10, backend 191/191 unit/API test và 15/15 E2E đã qua; Redis/RabbitMQ/Meilisearch được thử khi gián đoạn. [Báo cáo đối chiếu mới nhất](backend/docs/evidence/rubric-followup-20261020.md) ghi bằng chứng runtime, CI, secret scan và các giới hạn còn lại. Thay đổi sách qua API được giữ trong `BookSearchSync` để tự thử lại khi Meilisearch phục hồi. Nếu index mất dữ liệu hoặc sách được ghi ngoài API, dùng `docker compose --profile tools run --rm search-reindex` để xây dựng lại toàn bộ index. Xem thêm [báo cáo runtime 19/10](backend/docs/evidence/runtime-verification-20261019.md) và [audit gốc](backend/docs/evidence/rubric-audit-20261019.md).
 
 ## AI Disclosure
 

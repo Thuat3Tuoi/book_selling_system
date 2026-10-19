@@ -67,11 +67,6 @@ export const useOrderStore = create<OrderState>((set) => ({
     set({ creating: true });
 
     try {
-      console.log("Order payload:", {
-        shippingAddress,
-        orderItems,
-      });
-
       const response = await api.post<ApiResponse<Order>>("/orders", {
         shippingAddress,
         orderItems,

@@ -3,14 +3,9 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
 import { Prisma, type Book } from "../generated/prisma/client.js";
 import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
-import { SearchService } from "../search/search.service.js";
+import { BookSearchSyncService } from "../search/book-search-sync.service.js";
 import { RedisService } from "../redis/redis.service.js";
 import { BookStatus } from "../generated/prisma/enums.js";
-
-enum SearchSyncAction {
-    INDEX = "index",
-    REMOVE = "remove",
-}
 
 @Injectable()
 export class BooksService {
@@ -21,7 +16,7 @@ export class BooksService {
 
     constructor(
         private readonly prismaService: PrismaService,
-        private readonly searchService: SearchService,
+        private readonly searchSync: BookSearchSyncService,
         private readonly redis: RedisService
     ) {}
 
@@ -30,8 +25,8 @@ export class BooksService {
     // =========================
 
     createBook = async (createBookDto: CreateBookDto): Promise<Book> => {
-        const book = await this.prismaService.book.create({
-            data: {
+        const book = await this.prismaService.$transaction(async (tx) => {
+            const created = await tx.book.create({ data: {
                 title: createBookDto.title,
                 isbn: createBookDto.isbn,
                 description: createBookDto.description,
@@ -41,10 +36,12 @@ export class BooksService {
                 coverImageUrl: createBookDto.coverImageUrl,
                 price: new Prisma.Decimal(createBookDto.price),
                 status: BookStatus.ACTIVE,
-            },
+            } });
+            await this.searchSync.enqueue(tx, created.id);
+            return created;
         });
 
-        await this.syncToSearch(book, SearchSyncAction.INDEX);
+        await this.syncToSearch(book.id);
 
         // Danh sách sách đã thay đổi -> Xóa cache phân trang
         await this.redis.deleteByPattern("books:page:*");
@@ -160,15 +157,13 @@ export class BooksService {
             price: updateBookDto.price === undefined ? undefined : new Prisma.Decimal(updateBookDto.price),
         };
 
-        const book = await this.prismaService.book.update({
-            where: {
-                id: bookId,
-            },
-            data,
+        const book = await this.prismaService.$transaction(async (tx) => {
+            const updated = await tx.book.update({ where: { id: bookId }, data });
+            await this.searchSync.enqueue(tx, bookId);
+            return updated;
         });
 
-        // Sách bị chuyển sang INACTIVE thì gỡ khỏi chỉ mục tìm kiếm
-        await this.syncToSearch(book, book.status === BookStatus.ACTIVE ? SearchSyncAction.INDEX : SearchSyncAction.REMOVE);
+        await this.syncToSearch(bookId);
 
         // Xóa cache chi tiết sách
         await this.redis.delete(`book:${bookId}`);
@@ -187,16 +182,16 @@ export class BooksService {
     deleteBook = async (bookId: number): Promise<Book> => {
         await this.getBookById(bookId);
 
-        const book = await this.prismaService.book.update({
-            where: {
-                id: bookId,
-            },
-            data: {
-                status: BookStatus.INACTIVE,
-            },
+        const book = await this.prismaService.$transaction(async (tx) => {
+            const updated = await tx.book.update({
+                where: { id: bookId },
+                data: { status: BookStatus.INACTIVE },
+            });
+            await this.searchSync.enqueue(tx, bookId);
+            return updated;
         });
 
-        await this.syncToSearch(book, SearchSyncAction.REMOVE);
+        await this.syncToSearch(bookId);
 
         // Xóa cache chi tiết
         await this.redis.delete(`book:${bookId}`);
@@ -252,16 +247,12 @@ export class BooksService {
     // MEILISEARCH HELPER
     // =========================
 
-    private syncToSearch = async (book: Book, action: SearchSyncAction): Promise<void> => {
+    private syncToSearch = async (bookId: number): Promise<void> => {
         try {
-            if (action === SearchSyncAction.INDEX) {
-                await this.searchService.indexBook(book);
-            } else {
-                await this.searchService.removeBookFromIndex(book.id);
-            }
+            await this.searchSync.syncNow(bookId);
         } catch (error) {
             this.logger.error(
-                `Dong bo Meilisearch that bai cho sach id=${book.id}: ${(error as Error).message}`
+                `Dong bo Meilisearch that bai cho sach id=${bookId}: ${(error as Error).message}`
             );
         }
     };

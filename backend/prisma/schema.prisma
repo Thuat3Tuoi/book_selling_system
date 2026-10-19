@@ -160,6 +160,18 @@ model OutboxEvent {
   @@index([status, nextAttemptAt])
 }
 
+model BookSearchSync {
+  bookId        Int      @id
+  revision      String   @default(uuid())
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  leaseUntil    DateTime?
+  leaseToken    String?
+  updatedAt     DateTime @updatedAt
+
+  @@index([nextAttemptAt, leaseUntil])
+}
+
 enum OrderStatus {
   PENDING
   CONFIRMED

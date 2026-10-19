@@ -64,7 +64,7 @@ Cache Redis có TTL 300 giây và được vô hiệu hóa sau thay đổi sách
 
 Mã ở SHA `bb7593c` trên nhánh `audit/rubric-completion-20261019` đã qua backend lint/build, **191/191 unit/API test**, **15/15 E2E** trên Compose/database cô lập, và frontend build qua TypeScript. Migration **10/10** chạy trên database audit. Các phép thử broker, cache, search gián đoạn và phục hồi cùng kết quả EXPLAIN được ghi trong [báo cáo đối chiếu](backend/docs/evidence/rubric-followup-20261020.md).
 
-Checklist hiện **23/23 tiêu chí đạt theo bằng chứng audit**, chưa phải điểm chính thức của giảng viên. [PR #12](https://github.com/Thuat3Tuoi/book_selling_system/pull/12) được một thành viên khác phê duyệt trên SHA chốt, CI qua và đã merge vào `main` ngày 20/10/2026. [Báo cáo Word cập nhật 20/10](backend/REPORT_CCNLTHD_NHOM_9_CAP_NHAT_20261020.docx) giải thích thay đổi so với bản báo cáo 16/10. Không có file nhận xét tuần 5 của nhóm 9 trong bộ tài liệu chuẩn; đây là đánh giá bản hiện tại, không gán trạng thái đã sửa góp ý cũ.
+Checklist hiện **23/23 tiêu chí đạt theo bằng chứng audit**, chưa phải điểm chính thức của giảng viên. [PR #12](https://github.com/Thuat3Tuoi/book_selling_system/pull/12) được một thành viên khác phê duyệt trên SHA chốt, CI qua và đã merge vào `main` ngày 20/10/2026. [Báo cáo Word cập nhật 20/10](backend/REPORT_CCNLTHD_NHOM_9_CAP_NHAT_20261020.docx) đã được sắp xếp theo cấu trúc báo cáo của học phần và phân biệt kết quả hiện tại với mốc lịch sử 16/10. Nhật ký 12 tuần, ảnh Insights, prompt AI nguyên văn và thông tin trang bìa vẫn cần nhóm bổ sung từ nguồn chính thức. Không có file nhận xét tuần 5 của nhóm 9 trong bộ tài liệu chuẩn; đây là đánh giá bản hiện tại, không gán trạng thái đã sửa góp ý cũ.
 
 ## AI Disclosure
 

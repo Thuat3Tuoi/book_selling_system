@@ -15,7 +15,7 @@ datasource db {
 
 model Role {
   id       Int     @id @default(autoincrement())
-  roleName String  @unique
+  roleName RoleName @unique
   status   Boolean @default(true)
 
   users User[]
@@ -63,7 +63,7 @@ model Book {
   price         Decimal  @db.Decimal(10, 2)
   stockQuantity Int      @default(0)
   coverImageUrl String
-  status        String @default("ACTIVE")
+  status        BookStatus @default(ACTIVE)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -134,12 +134,13 @@ model OrderItem {
 model Notification {
   id Int @id @default(autoincrement())
 
-  notifyType String
+  notifyType NotificationType
 
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
   message String
+  eventId String? @unique
 
   status Boolean @default(true)
 
@@ -161,10 +162,68 @@ model OutboxEvent {
   @@index([publishedAt, nextAttemptAt])
 }
 
+model OutboxEvent {
+  id            String   @id @default(uuid())
+  eventType     OutboxEventType
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([status, nextAttemptAt])
+}
+
+model BookSearchSync {
+  bookId        Int      @id
+  revision      String   @default(uuid())
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  leaseUntil    DateTime?
+  leaseToken    String?
+  updatedAt     DateTime @updatedAt
+
+  @@index([nextAttemptAt, leaseUntil])
+}
+
 enum OrderStatus {
   PENDING
   CONFIRMED
   SHIPPING
   COMPLETED
   CANCELLED
+}
+
+enum RoleName {
+  ADMIN
+  STAFF
+  CUSTOMER
+}
+
+enum BookStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum NotificationType {
+  INFO
+  ORDER_CREATED
+  ORDER_CONFIRMED
+  ORDER_SHIPPING
+  ORDER_COMPLETED
+  ORDER_CANCELLED
+  SYSTEM
+  THONG_BAO @map("THONG BAO")
+}
+
+enum OutboxEventType {
+  ORDER_CREATED @map("order.created")
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  DEAD
 }

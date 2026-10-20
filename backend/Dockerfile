@@ -5,7 +5,7 @@ WORKDIR /app
 
 FROM base AS dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund --fetch-retries=5
 
 FROM dependencies AS build
 COPY nest-cli.json tsconfig.json tsconfig.build.json prisma.config.ts ./
@@ -29,7 +29,7 @@ CMD ["./node_modules/.bin/tsx", "prisma/seed.ts"]
 
 FROM base AS production-dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --no-audit --no-fund --fetch-retries=5
 
 FROM base AS runtime
 ENV NODE_ENV=production \

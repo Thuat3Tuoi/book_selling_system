@@ -9,6 +9,7 @@ import type { AddToCartDto } from "./dtos/cart-add-request.dto.js";
 import { UpdateCartItemDto } from "./dtos/cart-update-request.dto.js";
 
 import { RedisService } from "../redis/redis.service.js";
+import { BookStatus } from "../generated/prisma/enums.js";
 
 @Injectable()
 export class CartsService {
@@ -81,7 +82,7 @@ export class CartsService {
             where: { id: addToCartDto.bookId },
         });
 
-        if (!book || book.status !== "ACTIVE") {
+        if (!book || book.status !== BookStatus.ACTIVE) {
             throw new NotFoundException("Không tìm thấy sách hoặc sách không còn hoạt động");
         }
 

@@ -101,13 +101,13 @@ export default function ProductDetailPage() {
         {/* Book cover */}
         <div className="flex aspect-[3/4] items-center justify-center rounded-sm bg-[#EFE9DA] px-6 text-center">
           {/* <span className="font-serif text-lg leading-snug text-[#1F2321]/70"> */}
-          <Image
+          {selectedBook.coverImageUrl ? <Image
                         width={200}
                         height={300}
                         src={selectedBook.coverImageUrl}
                         alt={`Bìa sách ${selectedBook.title}`}
                         className="max-h-full max-w-full object-contain"
-                      />
+                      /> : <span>Không có bìa sách</span>}
           {/* </span> */}
         </div>
 

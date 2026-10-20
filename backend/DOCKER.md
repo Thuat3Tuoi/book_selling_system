@@ -1,5 +1,7 @@
 ## Chạy Backend với Docker Compose
 
+Đây là cấu hình **chỉ chạy backend** từ thư mục `backend`. Để khởi động cả frontend và backend bằng một lệnh tại thư mục gốc, xem [README chính](../README.md). Hai cấu hình dùng Compose project và named volumes riêng.
+
 ### 1. Cấu hình môi trường
 
 Trong thư mục `backend`, tạo `.env` từ `.env.example` nếu chưa có.

@@ -42,6 +42,7 @@ describe('SearchController', () => {
       category: "Technology",
       page: 2,
       limit: 10,
+      sort: undefined,
     });
   });
 
@@ -51,9 +52,10 @@ describe('SearchController', () => {
     await controller.searchBooks(query);
 
     expect(searchBooksMock).toHaveBeenCalledWith("", {
-      categogy: undefined,
+      category: undefined,
       page: undefined,
       limit: undefined,
+      sort: undefined,
     });
   });
 });

@@ -19,6 +19,8 @@ import { CronJobModule } from "./infrastructure/cron-job/cron-job.module.js";
 import { SearchModule } from './search/search.module.js';
 import { RedisModule } from "./redis/redis.module.js";
 import { HealthController } from "./health.controller.js";
+import { RabbitmqModule } from "./infrastructure/rabbitmq/rabbitmq.module.js";
+import { SearchReconcileService } from "./search/search-reconcile.service.js";
 
 @Module({
     imports: [
@@ -34,11 +36,13 @@ import { HealthController } from "./health.controller.js";
         ScheduleModule.forRoot(),
         CronJobModule,
         SearchModule,
-        RedisModule
+        RedisModule,
+        RabbitmqModule,
     ],
     controllers: [AppController, HealthController],
     providers: [
         AppService,
+        SearchReconcileService,
         { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
         { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
         { provide: APP_FILTER, useClass: ResponseEnvelopeExceptionFilter },

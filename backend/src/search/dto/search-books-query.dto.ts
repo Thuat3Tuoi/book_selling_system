@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 
 
 export class SearchBooksQueryDto {
@@ -10,6 +10,10 @@ export class SearchBooksQueryDto {
     @IsOptional()
     @IsString()
     category?: string;
+
+    @IsOptional()
+    @IsIn(["price:asc", "price:desc"])
+    sort?: "price:asc" | "price:desc";
 
     @IsOptional()
     @Type(() => Number)

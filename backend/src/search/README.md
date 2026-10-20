@@ -43,7 +43,7 @@ Mỗi document trong index `books` chứa các trường:
 | `price` | Giá sách trong kết quả |
 | `coverImageUrl` | Ảnh bìa trong kết quả |
 
-Khi khởi động, `SearchService` tạo index (nếu chưa có), cấu hình 5 trường tìm kiếm văn bản (`title`, `author`, `isbn`, `category`, `description`) và cho phép lọc theo `category`.
+Khi khởi động, `SearchService` tạo index (nếu chưa có), cấu hình 5 trường tìm kiếm văn bản (`title`, `author`, `isbn`, `category`, `description`), cho phép lọc theo `category` và sắp xếp theo `price`.
 
 > **Lưu ý:** PostgreSQL vẫn là nguồn dữ liệu chính. Index phục vụ tìm kiếm, không chứa `stockQuantity` hoặc `status`.
 
@@ -51,19 +51,20 @@ Khi khởi động, `SearchService` tạo index (nếu chưa có), cấu hình 5
 
 ```text
 Tạo / sửa sách
-    → Lưu vào PostgreSQL
-    → Gửi yêu cầu thêm / cập nhật document trong Meilisearch
+    → Lưu sách và sự kiện outbox trong cùng transaction PostgreSQL
+    → Publisher gửi `book.changed` tới RabbitMQ
+    → Consumer đọc trạng thái mới nhất rồi cập nhật Meilisearch
 
 Ngừng bán sách
-    → Đổi status thành INACTIVE trong PostgreSQL
-    → Gửi yêu cầu xóa document khỏi Meilisearch
+    → Đổi status thành INACTIVE và ghi outbox
+    → Consumer xóa document khỏi Meilisearch
 
 GET /search/books
     → Backend truy vấn index books
     → Trả kết quả cho client
 ```
 
-Meilisearch xử lý các yêu cầu ghi bằng **tác vụ bất đồng bộ**. Log có `taskUid` chỉ cho biết Meilisearch đã nhận tác vụ, **chưa có nghĩa tác vụ đã hoàn tất**. Vì vậy, sách mới có thể chưa xuất hiện ngay trong kết quả tìm kiếm. Nếu đồng bộ lỗi, `BooksService` ghi log nhưng thao tác lưu PostgreSQL vẫn có thể thành công.
+Meilisearch xử lý ghi bằng tác vụ bất đồng bộ. Consumer chờ tác vụ hoàn tất trước khi ACK. Nếu đồng bộ lỗi liên tiếp ba lần, message được chuyển sang queue `.dead`; tác vụ đối soát lúc khởi động và mỗi 15 phút bổ sung sách còn thiếu, cập nhật sách thay đổi và loại bỏ document cũ. Vì vậy tìm kiếm có thể chậm hơn PostgreSQL một khoảng thời gian.
 
 ## 2. Bước 1: Khởi chạy hệ thống
 
@@ -252,7 +253,7 @@ Document vừa tạo dự kiến xuất hiện trong `hits`. Nếu chưa thấy,
 
 ## 5. Đồng bộ sách từ PostgreSQL vào Meilisearch
 
-Nếu sách được tạo **trước khi Meilisearch chạy**, được thêm bằng **seed**, hoặc được ghi trực tiếp vào **PostgreSQL**, chúng sẽ không tự động xuất hiện trong index.
+Sách được tạo bằng seed hoặc ghi trực tiếp vào PostgreSQL được tác vụ đối soát tự đồng bộ khi backend khởi động và mỗi 15 phút. Có thể chạy script để đối soát ngay:
 
 Chạy lệnh đồng bộ từ thư mục `backend`:
 
@@ -263,16 +264,15 @@ docker compose exec -T backend node dist/search/reindex.script.js
 Script sẽ:
 
 1. Lấy **chỉ các sách có `status = ACTIVE`** từ PostgreSQL.
-2. Gửi từng sách vào index `books`.
-3. In số lệnh gửi thành công và thất bại.
+2. Gửi theo lô vào index `books` và chờ từng tác vụ hoàn tất.
+3. Xóa document không còn tương ứng với sách ACTIVE.
 
-Thông báo `dong bo thanh cong` chỉ xác nhận Meilisearch **đã nhận yêu cầu**, không đảm bảo việc lập chỉ mục đã xong. Sau đó, kiểm tra lại:
+Thông báo hoàn tất xác nhận các tác vụ Meilisearch đã thành công. Sau đó, kiểm tra lại:
 
 ```bash
 curl -fsS 'http://localhost:3001/search/books'
 ```
 
-> **Giới hạn:** Script reindex hiện **không xóa** những document cũ đã không còn tương ứng với sách trong PostgreSQL.
 
 Nếu backend chạy ngoài Docker, có thể dùng:
 
@@ -289,7 +289,7 @@ Tuy nhiên, máy chạy lệnh phải truy cập được **PostgreSQL và Meili
 | `/health` báo lỗi | Chạy `docker compose ps --all` và kiểm tra log `backend`, `meilisearch`, `postgres`, `redis`. |
 | PostgreSQL có sách nhưng tìm kiếm trả về 0 kết quả | Kiểm tra `status = ACTIVE`; chạy reindex; đợi tác vụ lập chỉ mục hoàn tất rồi tìm lại. |
 | Lọc `category` không có kết quả | Kiểm tra tên thể loại có khớp chính xác với dữ liệu sách không. Hiện chỉ `category` được cấu hình làm thuộc tính lọc. |
-| Vẫn tìm thấy sách đã xóa hoặc ngừng bán | Kiểm tra log `Dong bo Meilisearch that bai`. Script reindex hiện không tự xóa document cũ. |
+| Vẫn tìm thấy sách đã xóa hoặc ngừng bán | Kiểm tra log consumer, queue `.dead` và tác vụ đối soát; chạy `npm run search:reindex` trên môi trường có quyền truy cập khi cần đối soát ngay. |
 
 ### Các file mã nguồn liên quan
 

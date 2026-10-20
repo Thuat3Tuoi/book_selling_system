@@ -34,30 +34,15 @@ async function reindexAllBooks() {
     });
 
     console.log(`Tim thay ${books.length} sach ACTIVE can dong bo`);
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const book of books) {
-        try {
-            await searchService.indexBook(book);
-            successCount++;
-        } catch (error) {
-            failCount++;
-            console.log(`Loi dong bo sach id=${book.id}:`, (error as Error).message);
-        }
-    }
+    await searchService.reindexAll(books);
 
     const durationMs = Math.round(performance.now() - startedAt);
     console.log(
-        `Hoan tat: ${successCount}/${books.length} sach dong bo thanh cong, ` +
-            `${failCount} loi, mat ${durationMs}ms`
+        `Hoan tat: ${books.length} sach ACTIVE dong bo, sach khong ACTIVE da duoc go khoi index, mat ${durationMs}ms`
     );
 
     await app.close();
 
-    if (failCount > 0) {
-        process.exitCode = 1;
-    }
 }
 
 reindexAllBooks().catch((error) => {

@@ -13,12 +13,17 @@ const mockIndex = {
   }),
   updateSearchableAttributes: vi.fn().mockResolvedValue({ taskUid: 3 }),
   updateFilterableAttributes: vi.fn().mockResolvedValue({ taskUid: 4 }),
+  updateSortableAttributes: vi.fn().mockResolvedValue({ taskUid: 5 }),
+  getDocuments: vi.fn().mockResolvedValue({ results: [] }),
+  deleteDocuments: vi.fn().mockResolvedValue({ taskUid: 6 }),
 };
+const mockWaitForTask = vi.fn().mockResolvedValue({ status: "succeeded" });
 
 vi.mock("meilisearch", () => {
   return {
     Meilisearch: class {
       index = vi.fn().mockReturnValue(mockIndex);
+      tasks = { waitForTask: mockWaitForTask };
       createIndex = vi.fn().mockResolvedValue({ taskUid: 0 });
       health = vi.fn().mockResolvedValue({ status: "available" });
     },
@@ -43,6 +48,7 @@ describe('SearchService', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockWaitForTask.mockResolvedValue({ status: "succeeded" });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SearchService,
@@ -100,6 +106,7 @@ describe('SearchService', () => {
       limit: 10,
       offset: 10,
       filter: undefined,
+      sort: undefined,
       matchingStrategy: "all",
     });
     expect(result.totalHits).toBe(1);
@@ -117,12 +124,28 @@ describe('SearchService', () => {
     );
   });
 
+  it("cho phép sắp xếp giá và trả 503 khi Meilisearch không khả dụng", async () => {
+    await service.searchBooks("book", { sort: "price:asc" });
+    expect(mockIndex.search).toHaveBeenCalledWith("book", expect.objectContaining({ sort: ["price:asc"] }));
+    mockIndex.search.mockRejectedValueOnce(new Error("connection refused"));
+    await expect(service.searchBooks("book")).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("vẫn cấu hình index khi createIndex báo đã tồn tại qua failed task", async () => {
+    mockWaitForTask.mockResolvedValueOnce({ status: "failed", error: { code: "index_already_exists", message: "exists" } });
+    await service.onModuleInit();
+    expect(mockIndex.updateSearchableAttributes).toHaveBeenCalled();
+    expect(mockIndex.updateFilterableAttributes).toHaveBeenCalledWith(["category"]);
+    expect(mockIndex.updateSortableAttributes).toHaveBeenCalledWith(["price"]);
+  });
+
   it("searchBooks() dung page=1 limit=20 mac dinh khi khong truyen options", async () => {
     await service.searchBooks("clean code");
     expect(mockIndex.search).toHaveBeenCalledWith("clean code", {
       limit: 20,
       offset: 0,
       filter: undefined,
+      sort: undefined,
       matchingStrategy: "all",
     });
   });

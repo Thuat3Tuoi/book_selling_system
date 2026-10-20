@@ -3,7 +3,6 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
 import { Prisma, type Book } from "../generated/prisma/client.js";
 import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
-import { SearchService } from "../search/search.service.js";
 import { RedisService } from "../redis/redis.service.js";
 
 export interface BooksPage {
@@ -20,7 +19,6 @@ export class BooksService {
 
     constructor(
         private readonly prismaService: PrismaService,
-        private readonly searchService: SearchService,
         private readonly redis: RedisService
     ) {}
 
@@ -29,8 +27,9 @@ export class BooksService {
     // =========================
 
     createBook = async (createBookDto: CreateBookDto): Promise<Book> => {
-        const book = await this.prismaService.book.create({
-            data: {
+        const book = await this.prismaService.$transaction(async (tx) => {
+            const created = await tx.book.create({
+                data: {
                 title: createBookDto.title,
                 isbn: createBookDto.isbn,
                 description: createBookDto.description,
@@ -40,13 +39,12 @@ export class BooksService {
                 coverImageUrl: createBookDto.coverImageUrl,
                 price: new Prisma.Decimal(createBookDto.price),
                 status: "ACTIVE",
-            },
+                },
+            });
+            await tx.outboxEvent.create({ data: { topic: "book.changed", payload: { bookId: created.id } } });
+            return created;
         });
-
-        await this.syncToSearch(book, "index");
-
-        // Danh sách sách đã thay đổi -> Xóa cache phân trang
-        await this.redis.delete("books:list");
+        await this.invalidateBookCaches(book.id);
 
         return book;
     };
@@ -57,10 +55,11 @@ export class BooksService {
 
     getBooks = async (page = 1, limit = 10): Promise<BooksPage> => {
         const skip = (page - 1) * limit;
-        const cacheKey = `books:page:${page}:limit:${limit}`;
+        const revision = await this.redis.getRevision("books:revision");
+        const cacheKey = `books:page:${page}:limit:${limit}:rev:${revision}`;
 
         // 1. Kiểm tra Redis
-        const cachedBooks = await this.redis.get<BooksPage>(cacheKey);
+        const cachedBooks = revision === null ? null : await this.redis.get<BooksPage>(cacheKey);
 
         if (cachedBooks) {
             this.logger.log(`CACHE HIT: ${cacheKey}`);
@@ -100,7 +99,7 @@ export class BooksService {
         };
 
         // 4. Lưu Redis trong 5 phút
-        await this.redis.set(cacheKey, result, this.CACHE_TTL);
+        if (revision !== null) await this.redis.set(cacheKey, result, this.CACHE_TTL);
 
         return result;
     };
@@ -110,10 +109,11 @@ export class BooksService {
     // =========================
 
     getBookById = async (bookId: number): Promise<Book> => {
-        const cacheKey = `book:${bookId}`;
+        const revision = await this.redis.getRevision(`book:${bookId}:revision`);
+        const cacheKey = `book:${bookId}:rev:${revision}`;
 
         // 1. Kiểm tra Redis
-        const cachedBook = await this.redis.get<Book>(cacheKey);
+        const cachedBook = revision === null ? null : await this.redis.get<Book>(cacheKey);
 
         if (cachedBook) {
             this.logger.log(`CACHE HIT: ${cacheKey}`);
@@ -134,7 +134,7 @@ export class BooksService {
         }
 
         // 3. Lưu Redis
-        await this.redis.set(cacheKey, book, this.CACHE_TTL);
+        if (revision !== null) await this.redis.set(cacheKey, book, this.CACHE_TTL);
 
         return book;
     };
@@ -159,21 +159,12 @@ export class BooksService {
             price: updateBookDto.price === undefined ? undefined : new Prisma.Decimal(updateBookDto.price),
         };
 
-        const book = await this.prismaService.book.update({
-            where: {
-                id: bookId,
-            },
-            data,
+        const book = await this.prismaService.$transaction(async (tx) => {
+            const updated = await tx.book.update({ where: { id: bookId }, data });
+            await tx.outboxEvent.create({ data: { topic: "book.changed", payload: { bookId } } });
+            return updated;
         });
-
-        // Sách bị chuyển sang INACTIVE thì gỡ khỏi chỉ mục tìm kiếm
-        await this.syncToSearch(book, book.status === "ACTIVE" ? "index" : "remove");
-
-        // Xóa cache chi tiết sách
-        await this.redis.delete(`book:${bookId}`);
-
-        // Xóa cache danh sách
-        await this.redis.delete("books:list");
+        await this.invalidateBookCaches(bookId);
 
         return book;
     };
@@ -185,22 +176,15 @@ export class BooksService {
     deleteBook = async (bookId: number): Promise<Book> => {
         await this.getBookById(bookId);
 
-        const book = await this.prismaService.book.update({
-            where: {
-                id: bookId,
-            },
-            data: {
-                status: "INACTIVE",
-            },
+        const book = await this.prismaService.$transaction(async (tx) => {
+            const updated = await tx.book.update({
+                where: { id: bookId },
+                data: { status: "INACTIVE" },
+            });
+            await tx.outboxEvent.create({ data: { topic: "book.changed", payload: { bookId } } });
+            return updated;
         });
-
-        await this.syncToSearch(book, "remove");
-
-        // Xóa cache chi tiết
-        await this.redis.delete(`book:${bookId}`);
-
-        // Xóa cache danh sách
-        await this.redis.delete("books:list");
+        await this.invalidateBookCaches(bookId);
 
         return book;
     };
@@ -227,8 +211,13 @@ export class BooksService {
             throw new BadRequestException(`Sách ${bookId} không đủ tồn kho hoặc không còn hoạt động.`);
         }
 
-        // Tồn kho thay đổi nên cache chi tiết sách không còn đúng
-        await this.redis.delete(`book:${bookId}`);
+    };
+
+    invalidateBookCaches = async (bookId: number): Promise<void> => {
+        await this.redis.incrementRevision(`book:${bookId}:revision`);
+        await this.redis.incrementRevision("books:revision");
+        // Giỏ hàng cache thông tin sách kèm theo; giá, trạng thái và tồn kho có thể đã đổi.
+        await this.redis.incrementRevision("cart:catalog:revision");
     };
 
     // =========================
@@ -238,6 +227,7 @@ export class BooksService {
     getLowStockBook = async () => {
         return this.prismaService.book.findMany({
             where: {
+                status: "ACTIVE",
                 stockQuantity: {
                     lte: 10,
                 },
@@ -245,21 +235,4 @@ export class BooksService {
         });
     };
 
-    // =========================
-    // MEILISEARCH HELPER
-    // =========================
-
-    private syncToSearch = async (book: Book, action: "index" | "remove"): Promise<void> => {
-        try {
-            if (action === "index") {
-                await this.searchService.indexBook(book);
-            } else {
-                await this.searchService.removeBookFromIndex(book.id);
-            }
-        } catch (error) {
-            this.logger.error(
-                `Dong bo Meilisearch that bai cho sach id=${book.id}: ${(error as Error).message}`
-            );
-        }
-    };
 }

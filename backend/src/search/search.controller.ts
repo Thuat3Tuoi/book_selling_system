@@ -13,6 +13,7 @@ export class SearchController {
             category: query.category,
             page: query.page,
             limit: query.limit,
+            sort: query.sort,
         });
     }
 }

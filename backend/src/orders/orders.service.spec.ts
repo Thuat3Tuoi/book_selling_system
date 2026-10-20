@@ -5,7 +5,6 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { BooksService } from "../books/books.service.js";
 import { RedisService } from "../redis/redis.service.js";
 import { Prisma } from "../generated/prisma/client.js";
-import { of } from "rxjs";
 
 vi.mock("../generated/prisma/client.js", () => ({
     PrismaClient: class {},
@@ -67,25 +66,20 @@ describe("OrdersService", () => {
         },
         cart: { findUnique: vi.fn() },
         cartItem: { deleteMany: vi.fn() },
+        outboxEvent: { create: vi.fn() },
     };
 
     const booksService = {
         reduceBookStock: vi.fn(),
+        invalidateBookCaches: vi.fn(),
     };
 
     const redis = {
-        delete: vi.fn(),
-    };
-
-    const rabbitmq = {
-        emit: vi.fn(),
+        incrementRevision: vi.fn(),
     };
 
     beforeEach(async () => {
         vi.resetAllMocks();
-
-        // Thiết lập mock emit trả về Observable chuẩn của RxJS mỗi khi resetAllMocks chạy
-        rabbitmq.emit.mockReturnValue(of(true));
 
         prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => unknown) => cb(prisma));
 
@@ -95,7 +89,6 @@ describe("OrdersService", () => {
                 { provide: PrismaService, useValue: prisma },
                 { provide: BooksService, useValue: booksService },
                 { provide: RedisService, useValue: redis },
-                { provide: "RABBITMQ", useValue: rabbitmq },
             ],
         }).compile();
 
@@ -112,7 +105,7 @@ describe("OrdersService", () => {
             orderItems: [{ bookId: 1, quantity: 2 }],
         };
 
-        it("tạo đơn hàng thành công, trừ tồn kho, xóa giỏ hàng và bắn event RabbitMQ", async () => {
+        it("tạo đơn hàng, trừ kho, xóa giỏ và lưu outbox cùng transaction", async () => {
             const activeBook = makeBook();
             const createdOrder = makeOrder();
 
@@ -130,9 +123,21 @@ describe("OrdersService", () => {
             expect(booksService.reduceBookStock).toHaveBeenCalledWith(prisma, 1, 2);
             expect(prisma.order.create).toHaveBeenCalled();
             expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 50 } });
-            expect(redis.delete).toHaveBeenCalledWith(`cart:user:${USER_ID}`);
-            expect(rabbitmq.emit).toHaveBeenCalledWith("order.created", createdOrder);
+            expect(redis.incrementRevision).toHaveBeenCalledWith(`cart:user:${USER_ID}:revision`);
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: {
+                topic: "order.created", payload: expect.objectContaining({ id: ORDER_ID, userId: USER_ID }),
+            } });
+            expect(booksService.invalidateBookCaches).toHaveBeenCalledWith(1);
             expect(result).toBe(createdOrder);
+        });
+
+        it("không trả đơn thành công nếu ghi outbox thất bại", async () => {
+            prisma.book.findMany.mockResolvedValue([makeBook()]);
+            prisma.order.create.mockResolvedValue(makeOrder());
+            prisma.cart.findUnique.mockResolvedValue(null);
+            prisma.outboxEvent.create.mockRejectedValue(new Error("DB error"));
+            await expect(service.createOrder(validRequest, USER_ID)).rejects.toThrow("DB error");
+            expect(redis.incrementRevision).not.toHaveBeenCalled();
         });
 
         it("ném BadRequestException khi danh sách sản phẩm rỗng", async () => {

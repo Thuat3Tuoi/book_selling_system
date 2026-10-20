@@ -51,7 +51,6 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([ref])
 }
 
 model Book {
@@ -71,6 +70,7 @@ model Book {
   cartItems CartItem[]
 
   orderItems OrderItem[]
+
 }
 
 model Cart {
@@ -111,6 +111,8 @@ model Order {
   createdAt DateTime @default(now())
 
   orderItems OrderItem[]
+
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model OrderItem {
@@ -142,6 +144,21 @@ model Notification {
   status Boolean @default(true)
 
   createdAt DateTime @default(now())
+  eventKey String? @unique
+}
+
+model OutboxEvent {
+  id            Int       @id @default(autoincrement())
+  topic         String
+  payload       Json
+  createdAt     DateTime  @default(now())
+  publishedAt   DateTime?
+  lockedUntil   DateTime?
+  nextAttemptAt DateTime  @default(now())
+  attempts      Int       @default(0)
+  lastError     String?
+
+  @@index([publishedAt, nextAttemptAt])
 }
 
 enum OrderStatus {

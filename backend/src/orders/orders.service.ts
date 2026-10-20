@@ -1,11 +1,10 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { OrderCreaterRequest } from "./dtos/order-creation-request.dto.js";
 import { OrderStatus, Prisma, type Order } from "../generated/prisma/client.js";
 import type { OrderUpdateRequest } from "./dtos/order-update-request.dto.js";
 import type { OrderUpdateStatusRequest } from "./dtos/order-update-status-request.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { BooksService } from "../books/books.service.js";
-import type { ClientProxy } from "@nestjs/microservices";
 import { RedisService } from "../redis/redis.service.js";
 import { canManageCatalog, type AuthenticatedUser } from "../auth/authenticated-user.js";
 
@@ -15,7 +14,6 @@ export class OrdersService {
         private readonly prismaService: PrismaService,
         private readonly bookService: BooksService,
         private readonly redis: RedisService,
-        @Inject("RABBITMQ") private readonly rabbitmq: ClientProxy
     ) {}
 
     createOrder = async (
@@ -125,18 +123,19 @@ export class OrdersService {
                 });
             }
 
+            await tx.outboxEvent.create({
+                data: {
+                    topic: "order.created",
+                    payload: JSON.parse(JSON.stringify(createdOrder)),
+                },
+            });
+
             return createdOrder;
         });
 
         // 4. Transaction thành công: xóa cache
-        await this.redis.delete(`cart:user:${userId}`);
-
-        // 5. Gửi sự kiện RabbitMQ
-        this.rabbitmq.emit("order.created", order).subscribe({
-            error: (error: unknown) => {
-                console.error("Không thể gửi sự kiện order.created:", error);
-            },
-        });
+        await this.redis.incrementRevision(`cart:user:${userId}:revision`);
+        for (const bookId of bookIds) await this.bookService.invalidateBookCaches(bookId);
 
         return order;
     };

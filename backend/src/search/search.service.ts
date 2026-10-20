@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Meilisearch, type Index } from "meilisearch";
 import type { Book } from '../generated/prisma/client.js';
@@ -20,6 +20,7 @@ export interface SearchBooksOptions {
     category?: string;
     page?: number;
     limit?: number;
+    sort?: "price:asc" | "price:desc";
 }
 
 export interface SearchBooksResult {
@@ -62,7 +63,7 @@ export class SearchService {
 
     async onModuleInit(): Promise<void> {
         try {
-            await this.client.createIndex(BOOKS_INDEX, { primaryKey: "id" });
+            await this.waitForTask((await this.client.createIndex(BOOKS_INDEX, { primaryKey: "id" })).taskUid);
         } catch (error) {
             const code = (error as { code?: string })?.code;
             if (code !== "index_already_exists") {
@@ -74,14 +75,15 @@ export class SearchService {
         }
 
         try {
-            await this.index.updateSearchableAttributes([
+            await this.waitForTask((await this.index.updateSearchableAttributes([
                 "title",
                 "author",
                 "isbn",
                 "category",
                 "description",
-            ]);
-            await this.index.updateFilterableAttributes(["category"]);
+            ])).taskUid);
+            await this.waitForTask((await this.index.updateFilterableAttributes(["category"])).taskUid);
+            await this.waitForTask((await this.index.updateSortableAttributes(["price"])).taskUid);
             // await this.index.updateTypoTolerance({
             //     minWordSizeForTypos: {
             //         oneTypo: 6,
@@ -109,13 +111,14 @@ export class SearchService {
     }
 
     async indexBook(book: Book): Promise<void> {
-        const documnent = this.toSearchDocument(book);
-        const task = await this.index.addDocuments([documnent]);
+        const task = await this.index.addDocuments([this.toSearchDocument(book)]);
+        await this.waitForTask(task.taskUid);
         this.logger.log(`Dong bo sach id=${book.id} vao Meilisearch (taskUid=${task.taskUid})`);
     }
 
     async removeBookFromIndex(bookId: number): Promise<void> {
         const task = await this.index.deleteDocument(bookId);
+        await this.waitForTask(task.taskUid);
         this.logger.log(`Xoa sach id=${bookId} khoi Meilisearch (taskUid=${task.taskUid})`);
     }
 
@@ -127,12 +130,19 @@ export class SearchService {
         const escapedCategory = options.category?.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
         const filter = escapedCategory ? `category = "${escapedCategory}"` : undefined;
 
-        const result = await this.index.search<BookSearchDocument>(query, {
+        let result;
+        try {
+            result = await this.index.search<BookSearchDocument>(query, {
             limit,
             offset,
             filter,
+            sort: options.sort ? [options.sort] : undefined,
             matchingStrategy: "all",
-        });
+            });
+        } catch (error) {
+            this.logger.error(`Meilisearch query failed: ${(error as Error).message}`);
+            throw new ServiceUnavailableException("Search is temporarily unavailable");
+        }
 
         return {
             hits: result.hits,
@@ -144,11 +154,35 @@ export class SearchService {
     }
 
     async reindexAll(books: Book[]): Promise<void> {
+        const activeIds = new Set(books.map((book) => book.id));
         const BATCH = 1000;
         for (let i = 0; i < books.length; i += BATCH) {
             const docs = books.slice(i, i + BATCH).map((b) => this.toSearchDocument(b));
             const task = await this.index.addDocuments(docs);
+            await this.waitForTask(task.taskUid);
             this.logger.log(`Batch ${i / BATCH + 1}: taskUid=${task.taskUid}`);
+        }
+
+        let offset = 0;
+        const staleIds: number[] = [];
+        while (true) {
+            const page = await this.index.getDocuments({ fields: ["id"], limit: BATCH, offset });
+            staleIds.push(...page.results.filter((doc) => !activeIds.has(doc.id)).map((doc) => doc.id));
+            if (page.results.length < BATCH) break;
+            offset += BATCH;
+        }
+        for (let i = 0; i < staleIds.length; i += BATCH) {
+            await this.waitForTask((await this.index.deleteDocuments(staleIds.slice(i, i + BATCH))).taskUid);
+        }
+    }
+
+    private async waitForTask(taskUid: number): Promise<void> {
+        const task = await this.client.tasks.waitForTask(taskUid, { timeout: 30_000 });
+        if (task.status !== "succeeded") {
+            throw Object.assign(
+                new Error(`Meilisearch task ${taskUid} failed: ${task.error?.message ?? task.status}`),
+                { code: task.error?.code },
+            );
         }
     }
 }

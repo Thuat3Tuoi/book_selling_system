@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { NotificationCreationRequest } from "./dtos/notification-creation-request.js";
-import type { Notification } from "../generated/prisma/client.js";
+import type { Notification, Order } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { canManageCatalog, type AuthenticatedUser } from "../auth/authenticated-user.js";
 
@@ -15,6 +15,28 @@ export class NotificationsService {
                 userId: request.userId,
                 message: request.message,
             },
+        });
+    };
+
+    createOrderNotification = async (order: Order): Promise<Notification> => {
+        const eventKey = `order.created:${order.id}`;
+        return this.prismaService.notification.upsert({
+            where: { eventKey },
+            create: {
+                eventKey,
+                notifyType: "THONG BAO",
+                userId: order.userId,
+                message: JSON.stringify(order),
+            },
+            update: {},
+        });
+    };
+
+    createNotificationOnce = async (eventKey: string, request: NotificationCreationRequest): Promise<Notification> => {
+        return this.prismaService.notification.upsert({
+            where: { eventKey },
+            create: { eventKey, notifyType: request.notifyType, userId: request.userId, message: request.message },
+            update: {},
         });
     };
 

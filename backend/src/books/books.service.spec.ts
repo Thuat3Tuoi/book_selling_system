@@ -1,7 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { BooksService } from "./books.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { SearchService } from "../search/search.service.js";
 import { RedisService } from "../redis/redis.service.js";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 
@@ -32,6 +31,8 @@ describe("BooksService", () => {
     let service: BooksService;
 
     const prisma = {
+        $transaction: vi.fn(),
+        outboxEvent: { create: vi.fn() },
         book: {
             create: vi.fn(),
             findMany: vi.fn(),
@@ -41,24 +42,24 @@ describe("BooksService", () => {
             updateMany: vi.fn(),
         },
     };
-    const search = {
-        indexBook: vi.fn(),
-        removeBookFromIndex: vi.fn(),
-    };
     const redis = {
         get: vi.fn(),
         set: vi.fn(),
         delete: vi.fn(),
+        deleteByPrefix: vi.fn(),
+        getRevision: vi.fn(),
+        incrementRevision: vi.fn(),
     };
 
     beforeEach(async () => {
         vi.resetAllMocks();
+        redis.getRevision.mockResolvedValue(0);
+        prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma));
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 BooksService,
                 { provide: PrismaService, useValue: prisma },
-                { provide: SearchService, useValue: search },
                 { provide: RedisService, useValue: redis },
             ],
         }).compile();
@@ -82,7 +83,7 @@ describe("BooksService", () => {
             coverImageUrl: "https://example.com/a.jpg",
         };
 
-        it("tạo sách ACTIVE, đồng bộ Meilisearch và xóa cache danh sách", async () => {
+        it("tạo sách ACTIVE và outbox trong cùng transaction, rồi xóa cache", async () => {
             const created = makeBook();
             prisma.book.create.mockResolvedValue(created);
 
@@ -92,16 +93,15 @@ describe("BooksService", () => {
             expect(prisma.book.create).toHaveBeenCalledWith({
                 data: expect.objectContaining({ title: dto.title, isbn: dto.isbn, status: "ACTIVE" }),
             });
-            expect(search.indexBook).toHaveBeenCalledWith(created);
-            expect(redis.delete).toHaveBeenCalledWith("books:list");
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(redis.incrementRevision).toHaveBeenCalledWith("books:revision");
         });
 
-        it("vẫn tạo được sách khi Meilisearch bị lỗi", async () => {
-            const created = makeBook();
-            prisma.book.create.mockResolvedValue(created);
-            search.indexBook.mockRejectedValue(new Error("Meilisearch down"));
-
-            await expect(service.createBook(dto)).resolves.toBe(created);
+        it("rollback thao tác sách khi không thể ghi outbox", async () => {
+            prisma.book.create.mockResolvedValue(makeBook());
+            prisma.outboxEvent.create.mockRejectedValue(new Error("DB error"));
+            await expect(service.createBook(dto)).rejects.toThrow("DB error");
+            expect(redis.incrementRevision).not.toHaveBeenCalled();
         });
     });
 
@@ -113,7 +113,7 @@ describe("BooksService", () => {
             const result = await service.getBooks(1, 10);
 
             expect(result).toBe(cached);
-            expect(redis.get).toHaveBeenCalledWith("books:page:1:limit:10");
+            expect(redis.get).toHaveBeenCalledWith("books:page:1:limit:10:rev:0");
             expect(prisma.book.findMany).not.toHaveBeenCalled();
         });
 
@@ -128,7 +128,7 @@ describe("BooksService", () => {
                 expect.objectContaining({ where: { status: "ACTIVE" }, skip: 10, take: 10 })
             );
             expect(result.meta).toEqual({ page: 2, limit: 10, total: 25, totalPages: 3 });
-            expect(redis.set).toHaveBeenCalledWith("books:page:2:limit:10", result, 300);
+            expect(redis.set).toHaveBeenCalledWith("books:page:2:limit:10:rev:0", result, 300);
         });
     });
 
@@ -147,7 +147,7 @@ describe("BooksService", () => {
             prisma.book.findUnique.mockResolvedValue(book);
 
             await expect(service.getBookById(1)).resolves.toBe(book);
-            expect(redis.set).toHaveBeenCalledWith("book:1", book, 300);
+            expect(redis.set).toHaveBeenCalledWith("book:1:rev:0", book, 300);
         });
 
         it("ném NotFoundException khi sách không tồn tại", async () => {
@@ -172,26 +172,24 @@ describe("BooksService", () => {
             redis.get.mockResolvedValue(makeBook());
         });
 
-        it("cập nhật sách ACTIVE: đánh lại chỉ mục và xóa cache", async () => {
+        it("cập nhật sách ACTIVE: ghi sự kiện và xóa cache", async () => {
             const updated = makeBook({ title: "Clean Code 2nd" });
             prisma.book.update.mockResolvedValue(updated);
 
             await expect(service.updateBook(1, { title: "Clean Code 2nd" })).resolves.toBe(updated);
 
-            expect(search.indexBook).toHaveBeenCalledWith(updated);
-            expect(search.removeBookFromIndex).not.toHaveBeenCalled();
-            expect(redis.delete).toHaveBeenCalledWith("book:1");
-            expect(redis.delete).toHaveBeenCalledWith("books:list");
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(redis.incrementRevision).toHaveBeenCalledWith("book:1:revision");
+            expect(redis.incrementRevision).toHaveBeenCalledWith("books:revision");
         });
 
-        it("chuyển sang INACTIVE: gỡ sách khỏi chỉ mục tìm kiếm", async () => {
+        it("chuyển sang INACTIVE: gửi sự kiện đồng bộ tìm kiếm", async () => {
             const updated = makeBook({ status: "INACTIVE" });
             prisma.book.update.mockResolvedValue(updated);
 
             await service.updateBook(1, { status: "INACTIVE" });
 
-            expect(search.removeBookFromIndex).toHaveBeenCalledWith(1);
-            expect(search.indexBook).not.toHaveBeenCalled();
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
         });
 
         it("ném NotFoundException khi cập nhật sách không tồn tại", async () => {
@@ -204,7 +202,7 @@ describe("BooksService", () => {
     });
 
     describe("deleteBook", () => {
-        it("xóa mềm: đặt status INACTIVE, gỡ khỏi chỉ mục và xóa cache", async () => {
+        it("xóa mềm: đặt status INACTIVE, ghi outbox và xóa cache", async () => {
             redis.get.mockResolvedValue(makeBook());
             prisma.book.update.mockResolvedValue(makeBook({ status: "INACTIVE" }));
 
@@ -215,8 +213,8 @@ describe("BooksService", () => {
                 data: { status: "INACTIVE" },
             });
             expect(result.status).toBe("INACTIVE");
-            expect(search.removeBookFromIndex).toHaveBeenCalledWith(1);
-            expect(redis.delete).toHaveBeenCalledWith("book:1");
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(redis.incrementRevision).toHaveBeenCalledWith("book:1:revision");
         });
     });
 
@@ -232,7 +230,7 @@ describe("BooksService", () => {
                 where: { id: 1, status: "ACTIVE", stockQuantity: { gte: 3 } },
                 data: { stockQuantity: { decrement: 3 } },
             });
-            expect(redis.delete).toHaveBeenCalledWith("book:1");
+            expect(redis.delete).not.toHaveBeenCalled();
         });
 
         it("ném BadRequestException khi không đủ tồn kho (không làm tồn kho âm)", async () => {
@@ -250,7 +248,7 @@ describe("BooksService", () => {
             await service.getLowStockBook();
 
             expect(prisma.book.findMany).toHaveBeenCalledWith({
-                where: { stockQuantity: { lte: 10 } },
+                where: { status: "ACTIVE", stockQuantity: { lte: 10 } },
             });
         });
     });

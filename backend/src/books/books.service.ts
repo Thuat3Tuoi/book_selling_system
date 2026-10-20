@@ -6,6 +6,11 @@ import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
 import { SearchService } from "../search/search.service.js";
 import { RedisService } from "../redis/redis.service.js";
 
+export interface BooksPage {
+    data: Book[];
+    meta: { page: number; limit: number; total: number; totalPages: number };
+}
+
 @Injectable()
 export class BooksService {
     private readonly logger = new Logger(BooksService.name);
@@ -50,12 +55,12 @@ export class BooksService {
     // GET ALL BOOKS
     // =========================
 
-    getBooks = async (page = 1, limit = 10) => {
+    getBooks = async (page = 1, limit = 10): Promise<BooksPage> => {
         const skip = (page - 1) * limit;
         const cacheKey = `books:page:${page}:limit:${limit}`;
 
         // 1. Kiểm tra Redis
-        const cachedBooks = await this.redis.get(cacheKey);
+        const cachedBooks = await this.redis.get<BooksPage>(cacheKey);
 
         if (cachedBooks) {
             this.logger.log(`CACHE HIT: ${cacheKey}`);

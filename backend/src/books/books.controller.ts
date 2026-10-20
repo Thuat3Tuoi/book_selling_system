@@ -3,43 +3,44 @@ import { BooksService } from "./books.service.js";
 import { CreateBookDto } from "./dtos/book-create-request.dto.js";
 import { UpdateBookDto } from "./dtos/book-update-request.dto.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
+import { RolesGuard } from "../guards/roles.guard.js";
+import { Roles } from "../guards/roles.decorator.js";
+import { BooksQueryDto } from "./dtos/books-query.dto.js";
+import { BookResponseDto } from "./dtos/book-response.dto.js";
 
 @Controller("books")
 export class BooksController {
     constructor(private readonly booksService: BooksService) {}
 
     @Post()
-    createBook(@Body() createBookDto: CreateBookDto) {
-        return this.booksService.createBook(createBookDto);
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("ADMIN", "STAFF")
+    async createBook(@Body() createBookDto: CreateBookDto) {
+        return new BookResponseDto(await this.booksService.createBook(createBookDto));
     }
 
-    @UseGuards(JwtAuthGuard)
     @Get()
-    getBooks(
-        @Query("page") page?: string,
-        @Query("limit") limit?: string,
-    ) {
-        const currentPage = Number(page) || 1;
-        const currentLimit = Number(limit) || 10;
-
-        return this.booksService.getBooks(
-            currentPage,
-            currentLimit,
-        );
+    async getBooks(@Query() query: BooksQueryDto) {
+        const page = await this.booksService.getBooks(query.page ?? 1, query.limit ?? 10);
+        return { data: page.data.map((book) => new BookResponseDto(book)), meta: page.meta };
     }
 
     @Get(":id")
-    getBookById(@Param("id", ParseIntPipe) id: number) {
-        return this.booksService.getBookById(id);
+    async getBookById(@Param("id", ParseIntPipe) id: number) {
+        return new BookResponseDto(await this.booksService.getBookById(id));
     }
 
     @Patch(":id")
-    updateBook(@Param("id", ParseIntPipe) id: number, @Body() updateBookDto: UpdateBookDto) {
-        return this.booksService.updateBook(id, updateBookDto);
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("ADMIN", "STAFF")
+    async updateBook(@Param("id", ParseIntPipe) id: number, @Body() updateBookDto: UpdateBookDto) {
+        return new BookResponseDto(await this.booksService.updateBook(id, updateBookDto));
     }
 
     @Delete(":id")
-    deleteBook(@Param("id", ParseIntPipe) id: number) {
-        return this.booksService.deleteBook(id);
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("ADMIN", "STAFF")
+    async deleteBook(@Param("id", ParseIntPipe) id: number) {
+        return new BookResponseDto(await this.booksService.deleteBook(id));
     }
 }

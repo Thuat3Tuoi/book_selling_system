@@ -48,18 +48,21 @@ describe("CartsController", () => {
     });
 
     it("addToCart dùng userId lấy từ token và dữ liệu từ body", async () => {
+        cartsService.addToCart.mockResolvedValue({ id: 10, cartId: 1, bookId: 1, quantity: 2 });
         await controller.addToCart(req, { bookId: 1, quantity: 2 });
 
         expect(cartsService.addToCart).toHaveBeenCalledWith(7, { bookId: 1, quantity: 2 });
     });
 
     it("updateCartItem truyền userId, cartItemId và quantity", async () => {
+        cartsService.updateCartItemQuantity.mockResolvedValue({ id: 10, cartId: 1, bookId: 1, quantity: 3 });
         await controller.updateCartItem(req, 10, { quantity: 3 });
 
         expect(cartsService.updateCartItemQuantity).toHaveBeenCalledWith(7, 10, { quantity: 3 });
     });
 
     it("removeCartItem truyền userId và cartItemId", async () => {
+        cartsService.removeCartItem.mockResolvedValue({ id: 10, cartId: 1, bookId: 1, quantity: 3 });
         await controller.removeCartItem(req, 10);
 
         expect(cartsService.removeCartItem).toHaveBeenCalledWith(7, 10);

@@ -6,6 +6,7 @@ import { RabbitmqModule } from "../infrastructure/rabbitmq/rabbitmq.module.js";
 import { OrderCreatedConsumer } from "./dtos/consumers/order-created.consumer.js";
 import { NotificationsModule } from "../notifications/notifications.module.js";
 import { PassportModule } from "@nestjs/passport";
+import { RolesGuard } from "../guards/roles.guard.js";
 
 @Module({
     imports: [BooksModule, RabbitmqModule, NotificationsModule,
@@ -14,6 +15,6 @@ import { PassportModule } from "@nestjs/passport";
                     }),
     ],
     controllers: [OrdersController, OrderCreatedConsumer],
-    providers: [OrdersService],
+    providers: [OrdersService, RolesGuard],
 })
 export class OrdersModule {}

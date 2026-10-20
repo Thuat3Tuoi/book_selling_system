@@ -5,6 +5,8 @@ import { PrismaService } from "../prisma/prisma.service.js";
 
 import { CreateUserDto } from "../user/dto/create-user.dto.js";
 import { UserService } from "../user/user.service.js";
+import { UserResponseDto } from "../user/dto/user-response.dto.js";
+import { refreshCookieOptions } from "./refresh-cookie-options.js";
 
 @Injectable()
 export class AuthService {
@@ -21,7 +23,7 @@ export class AuthService {
     async login(data: any, res?: Response) {
         const user = await this.userService.findUserByEmail(data.email);
 
-        if (!user) {
+        if (!user || !user.status) {
             throw new UnauthorizedException("Invalid email or password");
         }
         // ACCESS TOKEN
@@ -53,23 +55,13 @@ export class AuthService {
 
 
         res?.cookie("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
+            ...refreshCookieOptions,
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
         return {
             accessToken,
-            user: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phone: user.phoneNumber,
-                address: user.address,
-                roleId: user.roleId,
-            },
+            user: new UserResponseDto(user),
         };
     }
 
@@ -80,6 +72,18 @@ export class AuthService {
         } catch {
             return false;
         }
+    }
+
+    async refreshAccessToken(ref: string) {
+        const user = await this.verifyRefreshToken(ref);
+        if (!user) throw new UnauthorizedException("Refresh Token is invalid");
+        return {
+            accessToken: await this.jwtService.signAsync({
+                sub: user.id,
+                email: user.email,
+                role: user.roleId,
+            }),
+        };
     }
 
     async logout(refreshToken: string) {

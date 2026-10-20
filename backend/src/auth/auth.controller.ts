@@ -18,6 +18,10 @@ import { LoginDto } from "./dto/login.dto.js";
 import { CreateUserDto } from "../user/dto/create-user.dto.js";
 import { LocalAuthGuard } from "../guards/local-auth.guard.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
+import { RefreshTokenDto } from "./dto/refresh-token.dto.js";
+import type { AuthenticatedUser } from "./authenticated-user.js";
+import { UserResponseDto } from "../user/dto/user-response.dto.js";
+import { refreshCookieOptions } from "./refresh-cookie-options.js";
 @Controller("auth")
 export class AuthController {
     constructor(private readonly authService: AuthService) {}
@@ -34,21 +38,18 @@ export class AuthController {
     }
 
     @Post("refresh-token")
-    async refreshToken(@Body() { refreshToken }: { refreshToken: string }) {
+    async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request) {
+        const refreshToken = dto.refreshToken ?? req.cookies?.refreshToken;
         if (!refreshToken) {
             throw new BadRequestException("Refresh Token is required");
         }
-        const user = await this.authService.verifyRefreshToken(refreshToken);
-        if (!user) {
-            throw new BadRequestException("Refresh Token is invalid");
-        }
-        return this.authService.login(user);
+        return this.authService.refreshAccessToken(refreshToken);
     }
 
     @UseGuards(JwtAuthGuard)
     @Get("profile")
-    getProfile(@Req() req: any) {
-        return req.user;
+    getProfile(@Req() req: Request & { user: AuthenticatedUser }) {
+        return new UserResponseDto(req.user);
     }
 
     @Post("logout")
@@ -59,11 +60,7 @@ export class AuthController {
             await this.authService.logout(refreshToken);
         }
 
-        res.clearCookie("refreshToken", {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
-        });
+        res.clearCookie("refreshToken", refreshCookieOptions);
 
         return {
             message: "Logout successful",

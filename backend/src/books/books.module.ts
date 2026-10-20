@@ -4,6 +4,7 @@ import { BooksService } from "./books.service.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { PassportModule } from "@nestjs/passport";
 import { SearchModule } from "../search/search.module.js";
+import { RolesGuard } from "../guards/roles.guard.js";
 
 @Module({
     imports: [
@@ -14,7 +15,7 @@ import { SearchModule } from "../search/search.module.js";
         SearchModule,
     ],
     controllers: [BooksController],
-    providers: [BooksService],
+    providers: [BooksService, RolesGuard],
     exports: [BooksService],
 })
 export class BooksModule {}

@@ -1,7 +1,7 @@
 
 import { create } from "zustand";
 import { api } from "@/lib/api";
-import type { ApiResponse } from "@/lib/types";
+import type { ApiResponse, OrderStatus } from "@/lib/types";
 import axios from "axios";
 
 export interface OrderItem {
@@ -19,7 +19,7 @@ export interface OrderItem {
 export interface Order {
   id: number;
   totalAmount: number | string;
-  status: string;
+  status: OrderStatus;
   shippingAddress: string;
   createdAt: string;
   orderItems: OrderItem[];
@@ -67,11 +67,6 @@ export const useOrderStore = create<OrderState>((set) => ({
     set({ creating: true });
 
     try {
-      console.log("Order payload:", {
-        shippingAddress,
-        orderItems,
-      });
-
       const response = await api.post<ApiResponse<Order>>("/orders", {
         shippingAddress,
         orderItems,

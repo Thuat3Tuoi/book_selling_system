@@ -1,3 +1,5 @@
+import { OrderStatus } from "@/lib/types";
+
 export function formatPrice(price: string | number): string {
   const value = typeof price === "string" ? Number(price) : price;
   return new Intl.NumberFormat("vi-VN", {
@@ -6,14 +8,14 @@ export function formatPrice(price: string | number): string {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-const ORDER_STATUS_LABEL: Record<string, string> = {
-  PENDING: "Đang chờ xử lý",
-  PAID: "Đã thanh toán",
-  SHIPPING: "Đang giao",
-  COMPLETED: "Hoàn tất",
-  CANCELLED: "Đã hủy",
+const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  [OrderStatus.PENDING]: "Đang chờ xử lý",
+  [OrderStatus.CONFIRMED]: "Đã xác nhận",
+  [OrderStatus.SHIPPING]: "Đang giao",
+  [OrderStatus.COMPLETED]: "Hoàn tất",
+  [OrderStatus.CANCELLED]: "Đã hủy",
 };
 
-export function formatOrderStatus(status: string): string {
-  return ORDER_STATUS_LABEL[status] ?? status;
+export function formatOrderStatus(status: OrderStatus): string {
+  return ORDER_STATUS_LABEL[status];
 }

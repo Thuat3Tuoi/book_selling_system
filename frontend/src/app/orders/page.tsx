@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { formatPrice } from "@/lib/format";
+import { formatOrderStatus, formatPrice } from "@/lib/format";
 import { useCartStore } from "@/stores/cart.store";
 import { useOrderStore } from "@/stores/order.store";
 
@@ -36,7 +36,7 @@ const {
 
   
   const total = items.reduce(
-    (sum, item) => sum + item.book.price * item.quantity,
+    (sum, item) => sum + Number(item.book.price) * item.quantity,
     0,
   );
 
@@ -98,7 +98,6 @@ const {
       <h1 className="mb-6 font-serif text-3xl font-medium text-[#1F2321]">
         Giỏ hàng{" "}
       </h1>
-      ```
       <div className="grid gap-10 lg:grid-cols-[1fr_320px]">
         {/* Cart items */}
         <div className="flex flex-col divide-y divide-[#E4DCC8] border-y border-[#E4DCC8]">
@@ -242,7 +241,7 @@ const {
                 </span>
 
                 <span className="rounded-full bg-[#EFE9DA] px-3 py-1 text-xs text-[#1F2321]/70">
-                  {order.status}
+                  {formatOrderStatus(order.status)}
                 </span>
               </div>
 

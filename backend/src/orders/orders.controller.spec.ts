@@ -55,26 +55,26 @@ describe("OrdersController", () => {
     it("getOrders gọi orderService.getOrders", async () => {
         ordersService.getOrders.mockResolvedValue([]);
 
-        await controller.getOrders();
+        await controller.getOrders(req);
 
-        expect(ordersService.getOrders).toHaveBeenCalled();
+        expect(ordersService.getOrders).toHaveBeenCalledWith(7);
     });
 
     it("getOrderById truyền id từ route param", async () => {
         ordersService.getOrderById.mockResolvedValue({ id: 100 });
 
-        await controller.getOrderById(100);
+        await controller.getOrderById(req, 100);
 
-        expect(ordersService.getOrderById).toHaveBeenCalledWith(100);
+        expect(ordersService.getOrderById).toHaveBeenCalledWith(100, 7);
     });
 
     it("updateOrder truyền id và orderUpdateRequest", async () => {
         const dto = { shippingAddress: "456 Nguyen Hue" };
         ordersService.updateOrder.mockResolvedValue({ id: 100 });
 
-        await controller.updateOrder(100, dto as any);
+        await controller.updateOrder(req, 100, dto as any);
 
-        expect(ordersService.updateOrder).toHaveBeenCalledWith(100, dto);
+        expect(ordersService.updateOrder).toHaveBeenCalledWith(100, dto, 7);
     });
 
     it("updateOrderStatus truyền id và status request dto", async () => {

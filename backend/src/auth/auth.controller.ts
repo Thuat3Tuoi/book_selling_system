@@ -16,8 +16,10 @@ import type { Response, Request } from "express";
 import { AuthService } from "./auth.service.js";
 import { LoginDto } from "./dto/login.dto.js";
 import { CreateUserDto } from "../user/dto/create-user.dto.js";
+import { RefreshTokenDto } from "./dto/refresh-token.dto.js";
 import { LocalAuthGuard } from "../guards/local-auth.guard.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
+import { ApiBearerAuth } from "@nestjs/swagger";
 @Controller("auth")
 export class AuthController {
     constructor(private readonly authService: AuthService) {}
@@ -34,18 +36,25 @@ export class AuthController {
     }
 
     @Post("refresh-token")
-    async refreshToken(@Body() { refreshToken }: { refreshToken: string }) {
+    async refreshToken(
+        @Body() dto: RefreshTokenDto,
+        @Req() req: Request,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        this.authService.assertCookieOrigin(req);
+        const refreshToken = req.cookies?.refreshToken ?? dto?.refreshToken;
         if (!refreshToken) {
             throw new BadRequestException("Refresh Token is required");
         }
-        const user = await this.authService.verifyRefreshToken(refreshToken);
-        if (!user) {
+        const refreshed = await this.authService.rotateRefreshToken(refreshToken, res);
+        if (!refreshed) {
             throw new BadRequestException("Refresh Token is invalid");
         }
-        return this.authService.login(user);
+        return refreshed;
     }
 
     @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
     @Get("profile")
     getProfile(@Req() req: any) {
         return req.user;
@@ -53,17 +62,15 @@ export class AuthController {
 
     @Post("logout")
     async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+        this.authService.assertCookieOrigin(req);
         const refreshToken = req.cookies?.refreshToken;
 
         if (refreshToken) {
             await this.authService.logout(refreshToken);
         }
 
-        res.clearCookie("refreshToken", {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
-        });
+        const { maxAge: _maxAge, ...cookieOptions } = this.authService.refreshCookieOptions();
+        res.clearCookie("refreshToken", cookieOptions);
 
         return {
             message: "Logout successful",

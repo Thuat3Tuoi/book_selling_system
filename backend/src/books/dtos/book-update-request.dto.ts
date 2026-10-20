@@ -1,4 +1,5 @@
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { BookStatus } from "../../generated/prisma/enums.js";
 
 export class UpdateBookDto {
     @IsOptional() @IsString() title?: string;
@@ -9,5 +10,5 @@ export class UpdateBookDto {
     @IsOptional() @IsNumber() @Min(0) price?: number;
     @IsOptional() @IsInt() @Min(0) stockQuantity?: number;
     @IsOptional() @IsString() coverImageUrl?: string;
-    @IsOptional() @IsIn(["ACTIVE", "INACTIVE"]) status?: string;
+    @IsOptional() @IsEnum(BookStatus) status?: BookStatus;
 }

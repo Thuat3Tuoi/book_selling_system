@@ -1,0 +1,47 @@
+Isolated Compose project: bookaudit20261019; 50,001 orders (1,001 customer A, 49,000 customer B). The BEFORE_INDEX block drops the index only inside a rolled-back transaction. Measured on 2026-10-19.
+Pager usage is off.
+BEFORE_INDEX
+BEGIN
+DROP INDEX
+                                                   QUERY PLAN
+----------------------------------------------------------------------------------------------------------------
+ Sort  (cost=1140.68..1143.08 rows=962 width=25) (actual time=2.284..2.313 rows=1001 loops=1)
+   Sort Key: "createdAt" DESC
+   Sort Method: quicksort  Memory: 71kB
+   Buffers: shared hit=471
+   ->  Seq Scan on "Order"  (cost=0.00..1093.01 rows=962 width=25) (actual time=0.014..2.133 rows=1001 loops=1)
+         Filter: ("userId" = 2)
+         Rows Removed by Filter: 49000
+         Buffers: shared hit=468
+ Planning:
+   Buffers: shared hit=51
+ Planning Time: 0.266 ms
+ Execution Time: 2.416 ms
+(12 rows)
+
+ROLLBACK
+AFTER_INDEX
+                                                                   QUERY PLAN
+-------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=551.44..553.84 rows=962 width=25) (actual time=0.253..0.282 rows=1001 loops=1)
+   Sort Key: "createdAt" DESC
+   Sort Method: quicksort  Memory: 71kB
+   Buffers: shared hit=15
+   ->  Bitmap Heap Scan on "Order"  (cost=23.75..503.77 rows=962 width=25) (actual time=0.096..0.164 rows=1001 loops=1)
+         Recheck Cond: ("userId" = 2)
+         Heap Blocks: exact=10
+         Buffers: shared hit=15
+         ->  Bitmap Index Scan on "Order_userId_createdAt_idx"  (cost=0.00..23.50 rows=962 width=0) (actual time=0.049..0.049 rows=1001 loops=1)
+               Index Cond: ("userId" = 2)
+               Buffers: shared hit=5
+ Planning:
+   Buffers: shared hit=23
+ Planning Time: 0.210 ms
+ Execution Time: 0.339 ms
+(15 rows)
+
+INDEX_PRESENT
+         indexname
+----------------------------
+ Order_userId_createdAt_idx
+(1 row)

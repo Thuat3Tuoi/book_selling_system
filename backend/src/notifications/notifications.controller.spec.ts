@@ -1,6 +1,8 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { NotificationsController } from "./notifications.controller.js";
 import { NotificationsService } from "./notifications.service.js";
+import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
+import { StaffAuthGuard } from "../guards/staff-auth.guard.js";
 
 describe("NotificationsController", () => {
     let controller: NotificationsController;
@@ -14,7 +16,8 @@ describe("NotificationsController", () => {
                     useValue: {},
                 },
             ],
-        }).compile();
+        }).overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })
+          .overrideGuard(StaffAuthGuard).useValue({ canActivate: () => true }).compile();
 
         controller = module.get<NotificationsController>(NotificationsController);
     });

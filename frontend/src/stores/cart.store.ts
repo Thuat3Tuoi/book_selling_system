@@ -8,15 +8,15 @@ export interface CartItem {
   book: {
     id: number;
     title: string;
-    price: number;
+    price: number | string;
     stockQuantity: number;
   };
 }
 
 interface Cart {
   id: number;
-  items: CartItem[];
-  totalAmount: number;
+  userId: number;
+  cartItems: CartItem[];
 }
 
 interface CartState {

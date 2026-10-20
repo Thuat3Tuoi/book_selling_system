@@ -162,19 +162,6 @@ model OutboxEvent {
   @@index([publishedAt, nextAttemptAt])
 }
 
-model OutboxEvent {
-  id            String   @id @default(uuid())
-  eventType     OutboxEventType
-  payload       Json
-  status        OutboxStatus @default(PENDING)
-  attempts      Int      @default(0)
-  nextAttemptAt DateTime @default(now())
-  publishedAt   DateTime?
-  createdAt     DateTime @default(now())
-
-  @@index([status, nextAttemptAt])
-}
-
 model BookSearchSync {
   bookId        Int      @id
   revision      String   @default(uuid())

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { OrdersService } from "./orders.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
@@ -61,6 +61,7 @@ describe("OrdersService", () => {
         order: {
             create: vi.fn(),
             findMany: vi.fn(),
+            findFirst: vi.fn(),
             findUnique: vi.fn(),
             update: vi.fn(),
         },
@@ -173,26 +174,36 @@ describe("OrdersService", () => {
     describe("getOrderById", () => {
         it("trả về đơn hàng nếu tìm thấy", async () => {
             const order = makeOrder();
-            prisma.order.findUnique.mockResolvedValue(order);
+            prisma.order.findFirst.mockResolvedValue(order);
 
             const result = await service.getOrderById(ORDER_ID, customer);
 
             expect(result).toBe(order);
-            expect(prisma.order.findUnique).toHaveBeenCalledWith({
-                where: { id: ORDER_ID },
+            expect(prisma.order.findFirst).toHaveBeenCalledWith({
+                where: { id: ORDER_ID, userId: USER_ID },
                 include: { orderItems: { include: { book: { select: { id: true, title: true } } } } },
             });
         });
 
         it("ném NotFoundException khi không tìm thấy đơn hàng", async () => {
-            prisma.order.findUnique.mockResolvedValue(null);
+            prisma.order.findFirst.mockResolvedValue(null);
 
             await expect(service.getOrderById(999, customer)).rejects.toBeInstanceOf(NotFoundException);
         });
 
-        it("từ chối đọc đơn của người khác", async () => {
-            prisma.order.findUnique.mockResolvedValue(makeOrder({ userId: 99 }));
-            await expect(service.getOrderById(ORDER_ID, customer)).rejects.toBeInstanceOf(ForbiddenException);
+        it("ẩn đơn của người khác bằng điều kiện sở hữu trong truy vấn", async () => {
+            prisma.order.findFirst.mockResolvedValue(null);
+            await expect(service.getOrderById(ORDER_ID, customer)).rejects.toBeInstanceOf(NotFoundException);
+            expect(prisma.order.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+                where: { id: ORDER_ID, userId: USER_ID },
+            }));
+        });
+
+        it("nhân viên được tìm đơn theo mã không giới hạn chủ sở hữu", async () => {
+            const order = makeOrder({ userId: 99 });
+            prisma.order.findFirst.mockResolvedValue(order);
+            await expect(service.getOrderById(ORDER_ID, { id: 1, role: { roleName: "STAFF" } } as any)).resolves.toBe(order);
+            expect(prisma.order.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: ORDER_ID } }));
         });
     });
 

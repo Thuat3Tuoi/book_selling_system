@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { BooksService } from "./books.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { RedisService } from "../redis/redis.service.js";
+import { BookSearchSyncService } from "../search/book-search-sync.service.js";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 
 vi.mock("../generated/prisma/client.js", () => ({
@@ -50,6 +51,7 @@ describe("BooksService", () => {
         getRevision: vi.fn(),
         incrementRevision: vi.fn(),
     };
+    const searchSync = { enqueue: vi.fn() };
 
     beforeEach(async () => {
         vi.resetAllMocks();
@@ -61,6 +63,7 @@ describe("BooksService", () => {
                 BooksService,
                 { provide: PrismaService, useValue: prisma },
                 { provide: RedisService, useValue: redis },
+                { provide: BookSearchSyncService, useValue: searchSync },
             ],
         }).compile();
 
@@ -94,6 +97,7 @@ describe("BooksService", () => {
                 data: expect.objectContaining({ title: dto.title, isbn: dto.isbn, status: "ACTIVE" }),
             });
             expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
             expect(redis.incrementRevision).toHaveBeenCalledWith("books:revision");
         });
 
@@ -101,6 +105,15 @@ describe("BooksService", () => {
             prisma.book.create.mockResolvedValue(makeBook());
             prisma.outboxEvent.create.mockRejectedValue(new Error("DB error"));
             await expect(service.createBook(dto)).rejects.toThrow("DB error");
+            expect(redis.incrementRevision).not.toHaveBeenCalled();
+        });
+
+        it("không xác nhận thao tác khi không thể lưu yêu cầu đồng bộ tìm kiếm", async () => {
+            prisma.book.create.mockResolvedValue(makeBook());
+            searchSync.enqueue.mockRejectedValue(new Error("DB sync queue error"));
+
+            await expect(service.createBook(dto)).rejects.toThrow("DB sync queue error");
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
             expect(redis.incrementRevision).not.toHaveBeenCalled();
         });
     });
@@ -179,6 +192,7 @@ describe("BooksService", () => {
             await expect(service.updateBook(1, { title: "Clean Code 2nd" })).resolves.toBe(updated);
 
             expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
             expect(redis.incrementRevision).toHaveBeenCalledWith("book:1:revision");
             expect(redis.incrementRevision).toHaveBeenCalledWith("books:revision");
         });
@@ -190,6 +204,7 @@ describe("BooksService", () => {
             await service.updateBook(1, { status: "INACTIVE" });
 
             expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
         });
 
         it("ném NotFoundException khi cập nhật sách không tồn tại", async () => {
@@ -214,6 +229,7 @@ describe("BooksService", () => {
             });
             expect(result.status).toBe("INACTIVE");
             expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
             expect(redis.incrementRevision).toHaveBeenCalledWith("book:1:revision");
         });
     });

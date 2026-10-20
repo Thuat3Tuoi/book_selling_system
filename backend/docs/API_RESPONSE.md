@@ -1,6 +1,6 @@
 # Cấu trúc phản hồi HTTP API (Response Envelope)
 
-Tất cả HTTP API trả về JSON đều sử dụng **một cấu trúc phản hồi thống nhất** để frontend dễ xử lý dữ liệu và lỗi. **Mã trạng thái HTTP (HTTP status code)** vẫn là căn cứ chính để xác định request thành công hay thất bại.
+Các HTTP API trả về JSON sử dụng **cấu trúc phản hồi thống nhất** cho dữ liệu và thông tin lỗi. **Mã trạng thái HTTP (HTTP status code)** là căn cứ chính xác định kết quả xử lý request.
 
 ## 1. Phản hồi thành công
 
@@ -66,11 +66,11 @@ Khi request thất bại, API trả về `success: false` và thông tin lỗi t
 
 `details` chỉ xuất hiện khi HTTP exception cung cấp một mảng thông báo lỗi validation. Với lỗi server không mong muốn, API trả về **thông báo chung** để tránh lộ thông tin nội bộ.
 
-## 4. Lưu ý khi sử dụng
+## 4. Phạm vi áp dụng và truy xuất dữ liệu
 
 - **HTTP API:** Áp dụng cấu trúc phản hồi thống nhất như trên.
 - **RabbitMQ:** Giữ nguyên định dạng message hiện tại, không áp dụng response envelope.
-- **Axios:** Nội dung response HTTP nằm trong `response.data`, nên dữ liệu thực tế của API nằm trong `response.data.data`.
+- **Axios:** Nội dung phản hồi HTTP nằm trong `response.data`; dữ liệu nghiệp vụ của API nằm trong `response.data.data`.
 
 Ví dụ sử dụng Axios:
 

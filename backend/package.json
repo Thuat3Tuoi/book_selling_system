@@ -22,6 +22,7 @@
         "prelint": "prisma generate",
         "lint": "oxlint --type-aware src/ test/",
         "prisma:seed": "tsx prisma/seed.ts",
+        "prisma:seed:safe": "tsx prisma/seed.safe.ts",
         "search:reindex": "tsx src/search/reindex.script.ts",
         "pretest": "prisma generate",
         "test": "vitest run",

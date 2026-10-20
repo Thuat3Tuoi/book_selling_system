@@ -4,6 +4,7 @@ import type { CreateBookDto } from "./dtos/book-create-request.dto.js";
 import { Prisma, type Book } from "../generated/prisma/client.js";
 import type { UpdateBookDto } from "./dtos/book-update-request.dto.js";
 import { RedisService } from "../redis/redis.service.js";
+import { BookSearchSyncService } from "../search/book-search-sync.service.js";
 
 export interface BooksPage {
     data: Book[];
@@ -19,7 +20,8 @@ export class BooksService {
 
     constructor(
         private readonly prismaService: PrismaService,
-        private readonly redis: RedisService
+        private readonly redis: RedisService,
+        private readonly searchSync: BookSearchSyncService,
     ) {}
 
     // =========================
@@ -42,6 +44,7 @@ export class BooksService {
                 },
             });
             await tx.outboxEvent.create({ data: { topic: "book.changed", payload: { bookId: created.id } } });
+            await this.searchSync.enqueue(tx, created.id);
             return created;
         });
         await this.invalidateBookCaches(book.id);
@@ -162,6 +165,7 @@ export class BooksService {
         const book = await this.prismaService.$transaction(async (tx) => {
             const updated = await tx.book.update({ where: { id: bookId }, data });
             await tx.outboxEvent.create({ data: { topic: "book.changed", payload: { bookId } } });
+            await this.searchSync.enqueue(tx, bookId);
             return updated;
         });
         await this.invalidateBookCaches(bookId);
@@ -182,6 +186,7 @@ export class BooksService {
                 data: { status: "INACTIVE" },
             });
             await tx.outboxEvent.create({ data: { topic: "book.changed", payload: { bookId } } });
+            await this.searchSync.enqueue(tx, bookId);
             return updated;
         });
         await this.invalidateBookCaches(bookId);

@@ -1,32 +1,28 @@
-# Meilisearch — Hướng dẫn tìm kiếm sách
+# Tích hợp Meilisearch trong chức năng tìm kiếm sách
 
-Tài liệu hướng dẫn chạy, kiểm tra và sử dụng tính năng tìm kiếm sách bằng **Meilisearch** trong dự án.
+Chức năng tìm kiếm sách sử dụng **Meilisearch** để lập chỉ mục và truy vấn theo từ khóa. Tài liệu trình bày vai trò của dịch vụ, môi trường triển khai, quy trình kiểm tra và cơ chế đồng bộ với PostgreSQL.
 
-> **Dành cho người mới bắt đầu**
->
-> - Các lệnh bên dưới chạy bằng **Git Bash**, tại thư mục `backend`, trừ khi có ghi chú khác.
-> - Nếu hệ thống đã chạy bằng Docker Compose, có thể bắt đầu từ [Bước 2: Kiểm tra dịch vụ](#3-bước-2-kiểm-tra-dịch-vụ).
-> - Chỉ tạo sách mẫu trên **môi trường phát triển** vì dữ liệu được lưu thật vào PostgreSQL.
+Các lệnh được thực hiện bằng **Git Bash** tại thư mục `backend`, trừ các vị trí có ghi chú riêng. Với hệ thống đã khởi động bằng Docker Compose, bước tiếp theo là [kiểm tra dịch vụ](#3-quy-trình-kiểm-tra-dịch-vụ). Việc tạo sách mẫu giới hạn trong **môi trường phát triển** do dữ liệu được ghi vào PostgreSQL.
 
 ## Mục lục
 
-1. [Meilisearch là gì?](#1-meilisearch-là-gì)
-2. [Bước 1: Khởi chạy hệ thống](#2-bước-1-khởi-chạy-hệ-thống)
-3. [Bước 2: Kiểm tra dịch vụ](#3-bước-2-kiểm-tra-dịch-vụ)
-4. [Bước 3: Thử tìm kiếm sách](#4-bước-3-thử-tìm-kiếm-sách)
+1. [Vai trò của Meilisearch](#1-vai-trò-của-meilisearch)
+2. [Môi trường và quy trình khởi động](#2-môi-trường-và-quy-trình-khởi-động)
+3. [Quy trình kiểm tra dịch vụ](#3-quy-trình-kiểm-tra-dịch-vụ)
+4. [API tìm kiếm sách](#4-api-tìm-kiếm-sách)
 5. [Đồng bộ sách từ PostgreSQL vào Meilisearch](#5-đồng-bộ-sách-từ-postgresql-vào-meilisearch)
-6. [Lỗi thường gặp và giới hạn](#6-lỗi-thường-gặp-và-giới-hạn)
+6. [Xử lý sự cố và giới hạn vận hành](#6-xử-lý-sự-cố-và-giới-hạn-vận-hành)
 
-## 1. Meilisearch là gì?
+## 1. Vai trò của Meilisearch
 
-**Meilisearch** là dịch vụ tìm kiếm theo từ khóa. Có thể hình dung:
+**Meilisearch** là dịch vụ tìm kiếm theo từ khóa. Các thành phần dữ liệu gồm:
 
 - **PostgreSQL:** kho dữ liệu gốc, lưu thông tin sách.
-- **Meilisearch:** mục lục để tìm sách nhanh theo từ khóa.
+- **Meilisearch:** dịch vụ lưu chỉ mục và truy vấn sách theo từ khóa.
 - **Document:** một bản ghi sách trong Meilisearch.
 - **Index:** tập hợp các document; dự án sử dụng index tên `books`.
 
-Khi người dùng tìm sách, backend truy vấn Meilisearch thay vì tự tìm trên từng dòng của PostgreSQL.
+Khi người dùng tìm sách, backend gửi truy vấn đến index `books` trong Meilisearch.
 
 ### Thông tin được lập chỉ mục
 
@@ -45,19 +41,19 @@ Mỗi document trong index `books` chứa các trường:
 
 Khi khởi động, `SearchService` tạo index (nếu chưa có), cấu hình 5 trường tìm kiếm văn bản (`title`, `author`, `isbn`, `category`, `description`), cho phép lọc theo `category` và sắp xếp theo `price`.
 
-> **Lưu ý:** PostgreSQL vẫn là nguồn dữ liệu chính. Index phục vụ tìm kiếm, không chứa `stockQuantity` hoặc `status`.
+PostgreSQL là nguồn dữ liệu chính. Index phục vụ tìm kiếm, không chứa `stockQuantity` hoặc `status`.
 
 ### Luồng dữ liệu
 
 ```text
 Tạo / sửa sách
-    → Lưu sách và sự kiện outbox trong cùng transaction PostgreSQL
-    → Publisher gửi `book.changed` tới RabbitMQ
-    → Consumer đọc trạng thái mới nhất rồi cập nhật Meilisearch
+    → Lưu sách, sự kiện outbox và yêu cầu BookSearchSync trong cùng transaction PostgreSQL
+    → Publisher gửi `book.changed` tới RabbitMQ để đồng bộ sớm
+    → Worker BookSearchSync thử lại khi Meilisearch hoặc consumer gặp lỗi
 
 Ngừng bán sách
-    → Đổi status thành INACTIVE và ghi outbox
-    → Consumer xóa document khỏi Meilisearch
+    → Đổi status thành INACTIVE, ghi outbox và BookSearchSync
+    → Consumer hoặc worker xóa document khỏi Meilisearch
 
 GET /search/books
     → Backend truy vấn index books
@@ -65,21 +61,21 @@ GET /search/books
     → Trả kết quả cho client
 ```
 
-Meilisearch xử lý ghi bằng tác vụ bất đồng bộ. Consumer chờ tác vụ hoàn tất trước khi ACK. Nếu đồng bộ lỗi liên tiếp ba lần, message được chuyển sang queue `.dead`; tác vụ đối soát lúc khởi động và mỗi 15 phút bổ sung sách còn thiếu, cập nhật sách thay đổi và loại bỏ document cũ. Vì vậy tìm kiếm có thể chậm hơn PostgreSQL một khoảng thời gian. Kết quả từ index được kiểm tra trạng thái với PostgreSQL trước khi trả, nên sách vừa chuyển sang `INACTIVE` không còn xuất hiện trong `hits` dù index chưa xóa xong.
+Meilisearch xử lý ghi bằng tác vụ bất đồng bộ. Consumer chờ tác vụ hoàn tất trước khi ACK. Nếu consumer lỗi liên tiếp ba lần, message được chuyển sang queue `.dead`; yêu cầu `BookSearchSync` vẫn nằm trong PostgreSQL và worker tự thử lại. Tác vụ đối soát lúc khởi động và mỗi 15 phút xử lý cả dữ liệu ghi trực tiếp/seed. Vì vậy tìm kiếm có thể chậm hơn PostgreSQL một khoảng thời gian. Kết quả từ index được kiểm tra trạng thái với PostgreSQL trước khi trả, nên sách vừa chuyển sang `INACTIVE` không còn xuất hiện trong `hits` dù index chưa xóa xong.
 
-## 2. Bước 1: Khởi chạy hệ thống
+## 2. Môi trường và quy trình khởi động
 
 ### 2.1. Chuẩn bị
 
-1. Cài và mở **Docker Desktop**; đảm bảo Docker Engine đang chạy.
-2. Mở **Git Bash** trong thư mục `backend` của dự án.
-3. Nếu chưa có `backend/.env`, tạo từ file mẫu:
+1. Môi trường sử dụng **Docker Desktop** với Docker Engine đang chạy.
+2. Thư mục làm việc của **Git Bash** là `backend/`.
+3. Tệp `backend/.env` được tạo từ tệp mẫu khi chưa tồn tại:
 
    ```bash
    cp .env.example .env
    ```
 
-4. Mở `.env` và đặt giá trị bí mật riêng, đủ dài cho các biến:
+4. Các biến sau được cấu hình bằng giá trị bí mật riêng trong `.env`; `JWT_SECRET` có độ dài tối thiểu 32 ký tự:
 
    ```dotenv
    POSTGRES_PASSWORD=...
@@ -88,11 +84,13 @@ Meilisearch xử lý ghi bằng tác vụ bất đồng bộ. Consumer chờ tá
    JWT_SECRET=...
    ```
 
-   Nếu đã có `.env`, **giữ nguyên các giá trị hiện tại**, chỉ bổ sung biến còn thiếu. Không commit `.env` lên Git.
+   Với tệp `.env` đã tồn tại, các giá trị hiện tại được giữ nguyên và các biến còn thiếu được bổ sung. Tệp `.env` được loại khỏi nội dung commit.
 
-> **Git Bash trên Windows:** Nếu đường dẫn chứa ký tự đặc biệt như `[` hoặc `]`, hãy đặt toàn bộ đường dẫn trong dấu nháy, ví dụ: `cd '/c/du-an/[bookstore]/backend'`.
+Trong Git Bash trên Windows, đường dẫn chứa ký tự đặc biệt như `[` hoặc `]` được đặt trong dấu nháy, ví dụ: `cd '/c/du-an/[bookstore]/backend'`.
 
-### 2.2. Chạy Docker Compose
+### 2.2. Khởi động bằng Docker Compose
+
+Trình tự kiểm tra cấu hình, xây dựng image và khởi động các dịch vụ:
 
 ```bash
 docker compose config --quiet
@@ -109,11 +107,11 @@ Kết quả mong đợi:
 | `redis` | `healthy` |
 | `rabbitmq` | `healthy` |
 | `backend` | `healthy` |
-| `migrate` | `Exited (0)` — bình thường |
+| `migrate` | `Exited (0)` — migration hoàn tất |
 
 - `docker compose config --quiet` không in kết quả khi cấu hình hợp lệ.
 - Lần build đầu tiên có thể mất vài phút.
-- Hướng dẫn Docker đầy đủ: [DOCKER.md](../../DOCKER.md).
+- Cấu hình triển khai Docker được trình bày tại [DOCKER.md](../../DOCKER.md).
 
 ### 2.3. Địa chỉ dịch vụ
 
@@ -122,11 +120,11 @@ Kết quả mong đợi:
 | Backend gọi Meilisearch trong mạng Docker | `http://meilisearch:7700` |
 | Máy host gọi API backend | `http://localhost:3001` |
 
-Meilisearch sử dụng `MEILISEARCH_API_KEY` làm **master key**. Docker Compose **không mở cổng `7700` ra máy host**. Nếu thay đổi `BACKEND_PORT` trong `.env`, hãy thay `3001` trong những lệnh bên dưới bằng cổng tương ứng.
+Meilisearch sử dụng `MEILISEARCH_API_KEY` làm **master key**. Docker Compose **không mở cổng `7700` ra máy host**. Giá trị `3001` trong các lệnh API tương ứng với cấu hình mặc định của `BACKEND_PORT`; khi thay đổi cấu hình, cổng truy cập được cập nhật tương ứng.
 
-## 3. Bước 2: Kiểm tra dịch vụ
+## 3. Quy trình kiểm tra dịch vụ
 
-Kiểm tra Meilisearch từ bên trong container:
+Trạng thái Meilisearch được kiểm tra từ bên trong container:
 
 ```bash
 docker compose exec -T meilisearch curl --fail --silent http://127.0.0.1:7700/health
@@ -138,7 +136,7 @@ Kết quả mong đợi:
 {"status":"available"}
 ```
 
-Kiểm tra endpoint health của backend từ máy host:
+Trạng thái backend được kiểm tra qua endpoint health từ máy host:
 
 ```bash
 curl -fsS 'http://localhost:3001/health'
@@ -146,14 +144,14 @@ curl -fsS 'http://localhost:3001/health'
 
 Phản hồi dự kiến chứa `"status": "ok"`. Endpoint `/health` kiểm tra **PostgreSQL, Redis và Meilisearch**.
 
-Nếu có lỗi, kiểm tra trạng thái và log:
+Trạng thái container và nhật ký phục vụ xác định nguyên nhân khi kiểm tra thất bại:
 
 ```bash
 docker compose ps --all
 docker compose logs --tail=100 backend meilisearch
 ```
 
-## 4. Bước 3: Thử tìm kiếm sách
+## 4. API tìm kiếm sách
 
 ### 4.1. Gọi API tìm kiếm
 
@@ -175,7 +173,7 @@ curl -fsS 'http://localhost:3001/search/books?q=Clean&category=C%C3%B4ng%20ngh%E
 curl -fsS 'http://localhost:3001/search/books'
 ```
 
-> **Lưu ý với Git Bash:** Luôn đặt URL trong dấu nháy đơn `'...'`, đặc biệt khi URL có ký tự `&`, để shell không tách lệnh.
+Trong Git Bash, URL được đặt trong dấu nháy đơn `'...'` để các ký tự như `&` được truyền nguyên vẹn đến `curl`.
 
 ### 4.2. Tham số tìm kiếm
 
@@ -194,7 +192,9 @@ Khi index đã có sách phù hợp, phản hồi có dạng (dữ liệu minh h
 
 ```json
 {
-  "hits": [
+  "success": true,
+  "data": {
+    "hits": [
     {
       "id": 3,
       "title": "Clean Code",
@@ -205,11 +205,12 @@ Khi index đã có sách phù hợp, phản hồi có dạng (dữ liệu minh h
       "price": 599000,
       "coverImageUrl": "https://example.com/clean-code.jpg"
     }
-  ],
-  "totalHits": 1,
-  "processingTimeMs": 2,
-  "page": 1,
-  "limit": 10
+    ],
+    "totalHits": 1,
+    "processingTimeMs": 2,
+    "page": 1,
+    "limit": 10
+  }
 }
 ```
 
@@ -217,19 +218,21 @@ Khi index đã có sách phù hợp, phản hồi có dạng (dữ liệu minh h
 - `totalHits`: số lượng kết quả ước tính do Meilisearch trả về. Trong lúc đồng bộ trễ, con số này có thể bao gồm sách vừa ngừng bán, dù `hits` đã loại sách đó; một trang có thể chứa ít hơn `limit` kết quả.
 - `processingTimeMs`: thời gian xử lý tìm kiếm, tính bằng mili giây.
 
-Database mới có thể trả `"hits": []` và `"totalHits": 0`. Đây là kết quả hợp lệ khi chưa có sách hoặc dữ liệu chưa được lập chỉ mục.
+Phản hồi `"hits": []` và `"totalHits": 0` biểu thị chưa có kết quả phù hợp, bao gồm trường hợp database mới chưa có sách hoặc dữ liệu chưa được lập chỉ mục.
 
-### 4.4. Tạo sách mẫu để thử tìm kiếm
+### 4.4. Quy trình kiểm tra với sách mẫu
 
-> **Chỉ thực hiện trên database phát triển.** API bên dưới tạo một sách thật trong PostgreSQL. Route `POST /books` hiện không có guard đăng nhập.
+Quy trình này thực hiện trên **database phát triển**. API `POST /books` tạo bản ghi sách trong PostgreSQL và yêu cầu Bearer token của tài khoản `ADMIN` hoặc `STAFF`. Access token được lấy qua `/auth/login` và gán vào biến `token` trong shell.
 
-Dùng Git Bash tạo ISBN có dấu thời gian, sau đó gửi JSON bằng `curl`:
+Các lệnh Git Bash dưới đây tạo ISBN có dấu thời gian và gửi dữ liệu JSON bằng `curl`:
 
 ```bash
 isbn="demo-meili-$(date +%s)"
+token='DAN_ACCESS_TOKEN_CUA_STAFF_VAO_DAY'
 
 curl -fsS -X POST 'http://localhost:3001/books' \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $token" \
   --data-binary @- <<EOF
 {
   "title": "MeiliDemo",
@@ -244,53 +247,53 @@ curl -fsS -X POST 'http://localhost:3001/books' \
 EOF
 ```
 
-Phản hồi của lệnh POST chứa `id` của sách mới. Kiểm tra tìm kiếm:
+Phản hồi của lệnh POST chứa `id` của sách mới. Lệnh truy vấn kiểm tra dữ liệu vừa tạo:
 
 ```bash
 curl -fsS 'http://localhost:3001/search/books?q=MeiliDemo'
 ```
 
-Document vừa tạo dự kiến xuất hiện trong `hits`. Nếu chưa thấy, thử gọi lại sau một chút vì Meilisearch xử lý tác vụ theo hàng đợi.
+Document vừa tạo dự kiến xuất hiện trong `hits` sau khi tác vụ lập chỉ mục hoàn tất. Trong thời gian chờ tác vụ trong hàng đợi, lần truy vấn đầu tiên có thể chưa trả về document này; kết quả được kiểm tra lại sau khi đồng bộ.
 
 ## 5. Đồng bộ sách từ PostgreSQL vào Meilisearch
 
-Sách được tạo bằng seed hoặc ghi trực tiếp vào PostgreSQL được tác vụ đối soát tự đồng bộ khi backend khởi động và mỗi 15 phút. Có thể chạy script để đối soát ngay:
+Sách được tạo bằng seed hoặc ghi trực tiếp vào PostgreSQL được tác vụ đối soát tự đồng bộ khi backend khởi động và mỗi 15 phút. Script đối soát thủ công phục vụ đồng bộ ngay sau thay đổi dữ liệu.
 
-Chạy lệnh đồng bộ từ thư mục `backend`:
+Lệnh đồng bộ được thực hiện tại thư mục `backend/`:
 
 ```bash
 docker compose exec -T backend node dist/search/reindex.script.js
 ```
 
-Script sẽ:
+Quy trình xử lý của script gồm:
 
 1. Lấy **chỉ các sách có `status = ACTIVE`** từ PostgreSQL.
 2. Gửi theo lô vào index `books` và chờ từng tác vụ hoàn tất.
 3. Xóa document không còn tương ứng với sách ACTIVE.
 
-Thông báo hoàn tất xác nhận các tác vụ Meilisearch đã thành công. Sau đó, kiểm tra lại:
+Thông báo hoàn tất xác nhận các tác vụ Meilisearch đã thành công. Kết quả đồng bộ được kiểm tra qua API:
 
 ```bash
 curl -fsS 'http://localhost:3001/search/books'
 ```
 
 
-Nếu backend chạy ngoài Docker, có thể dùng:
+Lệnh đồng bộ khi backend chạy ngoài Docker:
 
 ```bash
 npm run search:reindex
 ```
 
-Tuy nhiên, máy chạy lệnh phải truy cập được **PostgreSQL và Meilisearch**. Trong cấu hình Compose mặc định, hai dịch vụ này không được mở cổng ra host, vì vậy chạy script **bên trong container backend** là cách đơn giản nhất.
+Điều kiện thực thi lệnh trên là máy chạy lệnh truy cập được **PostgreSQL và Meilisearch**. Với cấu hình Compose mặc định, hai dịch vụ này không mở cổng ra host; vị trí thực thi script là **bên trong container backend**.
 
-## 6. Lỗi thường gặp và giới hạn
+## 6. Xử lý sự cố và giới hạn vận hành
 
 | Hiện tượng | Cách kiểm tra / xử lý |
 | --- | --- |
 | `/health` báo lỗi | Chạy `docker compose ps --all` và kiểm tra log `backend`, `meilisearch`, `postgres`, `redis`. |
 | PostgreSQL có sách nhưng tìm kiếm trả về 0 kết quả | Kiểm tra `status = ACTIVE`; chạy reindex; đợi tác vụ lập chỉ mục hoàn tất rồi tìm lại. |
 | Lọc `category` không có kết quả | Kiểm tra tên thể loại có khớp chính xác với dữ liệu sách không. Hiện chỉ `category` được cấu hình làm thuộc tính lọc. |
-| Vẫn tìm thấy sách đã xóa hoặc ngừng bán | Kiểm tra log consumer, queue `.dead` và tác vụ đối soát; chạy `npm run search:reindex` trên môi trường có quyền truy cập khi cần đối soát ngay. |
+| Vẫn tìm thấy sách đã xóa hoặc ngừng bán | Kiểm tra log consumer, queue `.dead`, bảng `BookSearchSync` và tác vụ đối soát; chạy reindex trong container backend khi cần đối soát ngay. |
 
 ### Các file mã nguồn liên quan
 

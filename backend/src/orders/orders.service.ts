@@ -141,17 +141,13 @@ export class OrdersService {
     };
 
     getOrderById = async (orderId: number, user: AuthenticatedUser): Promise<Order> => {
-        const order = await this.prismaService.order.findUnique({
-            where: { id: orderId },
+        const order = await this.prismaService.order.findFirst({
+            where: canManageCatalog(user) ? { id: orderId } : { id: orderId, userId: user.id },
             include: { orderItems: { include: { book: { select: { id: true, title: true } } } } },
         });
 
         if (!order) {
             throw new NotFoundException("Order not found!");
-        }
-
-        if (!canManageCatalog(user) && order.userId !== user.id) {
-            throw new ForbiddenException("Cannot access another user's order");
         }
 
         return order;

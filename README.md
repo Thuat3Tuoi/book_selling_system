@@ -1,508 +1,112 @@
-# Chạy và kiểm chứng backend
+# Hệ thống bán sách trực tuyến - Nhóm 9
 
-Ứng dụng NestJS nằm trong `backend/`; giao diện nằm trong `frontend/`. Cần Docker Desktop/Engine với Compose v2 để chạy demo, hoặc Node.js 22 và npm để chạy backend trực tiếp. Làm việc trên nhánh tính năng/sửa lỗi.
+Hệ thống bán sách trực tuyến gồm backend NestJS tại `backend/` và frontend Next.js tại `frontend/`. Nội dung đối chiếu giữa hồ sơ đề tài và mã nguồn được trình bày trong [biên bản ngày 21/10/2026](backend/docs/evidence/audit-2026-10-21.md). Tài liệu này trình bày cấu hình triển khai toàn hệ thống bằng **Compose tại thư mục gốc**. Cấu hình triển khai riêng backend được trình bày tại [backend/DOCKER.md](backend/DOCKER.md).
 
-## Demo bằng một lệnh
+## Cách chạy các lệnh trong tài liệu
 
-Trong `backend/`, sao chép `.env.example` thành `.env`, rồi điền các giá trị còn trống `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, `MEILISEARCH_API_KEY`, `JWT_SECRET`, `SEED_DEFAULT_PASSWORD` bằng giá trị ngẫu nhiên riêng cho máy thử. `JWT_SECRET` cần ít nhất 32 ký tự. Mật khẩu PostgreSQL và RabbitMQ nên dùng ký tự an toàn trong URL (ví dụ chuỗi hex). Đặt `CORS_ORIGINS` thành danh sách origin frontend, ngăn bằng dấu phẩy; không dùng `*`. Giữ `DEMO_SEED_ENABLED=true` **chỉ trên môi trường demo**. Không commit `.env`.
+Các lệnh trong README sử dụng **Bash trên Linux hoặc Git Bash trên Windows**. Trên Linux, mở Terminal; trên Windows, mở thư mục dự án bằng **Git Bash Here**. Nếu dùng terminal tích hợp của VS Code, chọn **Terminal → Select Default Profile → Git Bash**, rồi mở terminal mới.
 
-Giữ `NODE_ENV=development` cho Compose demo. Khi triển khai môi trường production, đặt `NODE_ENV=production` và `DEMO_SEED_ENABLED=false`; script seed chỉ cho phép tạo tài khoản demo khi `NODE_ENV=development` hoặc `test`. Không dùng file cấu hình demo để triển khai production.
-
-Trên PowerShell, dùng `Copy-Item .env.example .env` thay cho `cp`. Nếu chạy backend ngoài Compose, đặt thêm `DATABASE_URL`, `RABBITMQ_URL`, `RABBITMQ_QUEUE`, `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY`, `JWT_SECRET` và `CORS_ORIGINS` trong môi trường của tiến trình; chạy migration trước `npm run start:dev`.
+Chuyển đến thư mục gốc `book-selling-system/` trước khi chạy từng nhóm lệnh. Trong Git Bash, ổ `D:` được viết thành `/d/`, dùng dấu `/` trong đường dẫn và đặt đường dẫn chứa khoảng trắng hoặc ký tự `[`/`]` trong dấu nháy. Ví dụ với vị trí dự án trên Windows:
 
 ```bash
-cd backend
+cd '/d/SGU/Nam4/[T6-Chieu]-CCNLTHD/book-selling-system'
+```
+
+Trên Linux, thay đường dẫn trên bằng đường dẫn thực tế đến bản sao dự án, chẳng hạn `cd "$HOME/book-selling-system"`.
+
+| Lệnh Bash | Cách sử dụng |
+| --- | --- |
+| `pwd` | Xem thư mục đang làm việc. |
+| `ls -a` | Liệt kê tệp, gồm cả tệp ẩn như `.env`. |
+| `cd backend` / `cd ..` | Vào thư mục `backend/` / trở về thư mục cha. |
+| `cp .env.example .env` | Sao chép cấu hình mẫu; chỉ chạy khi chưa có `.env`. |
+
+Sao chép các dòng trong khối `bash` vào terminal theo thứ tự; dòng bắt đầu bằng `#` là chú thích. Các lệnh npm cần Node.js và npm đã được cài đặt trên máy.
+
+## 1. Môi trường và cấu hình triển khai
+
+Môi trường triển khai sử dụng Docker Desktop hoặc Docker Engine với Compose v2. Tệp `.env` tại **thư mục gốc** được tạo từ `.env.example`, gồm các biến `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, `MEILISEARCH_API_KEY`, `JWT_SECRET` và `SEED_DEFAULT_PASSWORD`. `JWT_SECRET` có độ dài tối thiểu 32 ký tự; mật khẩu PostgreSQL và RabbitMQ sử dụng chuỗi an toàn trong URL, chẳng hạn chuỗi hex. Các giá trị `CORS_ORIGINS` và `NEXT_PUBLIC_API_URL` tương ứng với cổng frontend và backend được cấu hình. Tệp `.env` chứa thông tin bí mật và được loại khỏi nội dung commit.
+
+Trình tự khởi động tại thư mục gốc (bước sao chép chỉ thực hiện khi chưa có `.env`):
+
+```bash
 cp .env.example .env
-# Điền các giá trị bí mật trong .env trước khi chạy.
+# Điền các giá trị còn trống trong .env
+docker compose config --quiet
 docker compose up --build -d
 docker compose ps --all
 ```
 
-Compose chờ PostgreSQL, Redis, RabbitMQ, Meilisearch healthy, chạy migration, seed và khởi động backend theo thứ tự. Migration tạo vai trò chuẩn; seed tạo dữ liệu và tài khoản demo bằng upsert/create theo email, ISBN và khóa mẫu, có thể chạy lại mà không xóa bản ghi cũ. Đặt `DEMO_SEED_ENABLED=false` để bỏ qua seed. Script seed chỉ chạy với `NODE_ENV=development` hoặc `test`. Không chạy demo seed trên database thật hoặc dùng chung.
+Compose chờ PostgreSQL, Redis, RabbitMQ và Meilisearch sẵn sàng, áp dụng migration, chạy `prisma/seed.safe.ts`, xây dựng lại chỉ mục sách rồi khởi động backend và frontend. Seed bổ sung các bản ghi mẫu còn thiếu vào database của Compose project và giữ nguyên dữ liệu, mật khẩu đã tồn tại. Dữ liệu mẫu gồm các vai trò `ADMIN`, `STAFF`, `CUSTOMER`; các tài khoản `staff@bookstore.example.com`, `customer-a@bookstore.example.com`, `customer-b@bookstore.example.com`; và sách *Clean Code*. Mật khẩu khởi tạo của ba tài khoản được lấy từ `SEED_DEFAULT_PASSWORD`. Phạm vi sử dụng seed là môi trường phát triển và kiểm thử. Khi tái sử dụng volume cũ, mật khẩu tài khoản đã tồn tại được giữ nguyên.
 
-Seed không đổi mật khẩu hoặc nội dung của tài khoản mẫu đã có; nếu dùng lại volume cũ, hãy đăng nhập bằng mật khẩu demo đã dùng ở lần seed đầu.
-
-| Dịch vụ | Địa chỉ từ máy host |
-| --- | --- |
-| API và health | `http://localhost:3001`, `/health` (đổi bằng `BACKEND_PORT`) |
-| Swagger UI và JSON | `http://localhost:3001/api/docs`, `/api/docs-json` |
-| PostgreSQL, Redis, RabbitMQ, Meilisearch | Chỉ trong mạng Compose; không mở cổng host |
-
-Demo seed tạo vai trò `ADMIN`, `STAFF`, `CUSTOMER`; tài khoản `admin@bookstore.example.com`, `staff@bookstore.example.com`, `minh.tran@example.com` (và ba khách hàng mẫu khác) dùng cùng **mật khẩu bạn tự đặt** trong `SEED_DEFAULT_PASSWORD`. Mật khẩu được hash bằng bcrypt, không hiển thị lại trong log. Dùng `/auth/login` để lấy access token rồi gọi `/books`, `/orders`, `/search/books?q=Clean`; Swagger liệt kê payload và mã phản hồi. Tạo/sửa sách cần `ADMIN` hoặc `STAFF`; đơn hàng và giỏ hàng kiểm tra người sở hữu. [Hướng dẫn Redis](backend/src/redis/README.md) và [tìm kiếm](backend/src/search/README.md) có các bước demo chi tiết.
-
-Xem trạng thái bằng `docker compose ps --all`, theo dõi log bằng `docker compose logs -f backend` hoặc xem lỗi khởi động bằng `docker compose logs --tail=100 migrate seed backend`. Nếu `migrate` lỗi, kiểm tra PostgreSQL healthy và `POSTGRES_PASSWORD`; nếu `seed` lỗi, kiểm tra cờ demo, `NODE_ENV` và `SEED_DEFAULT_PASSWORD`; nếu backend lỗi, kiểm tra các URL/khóa bắt buộc và `CORS_ORIGINS`. Sau khi sửa `.env`, chạy lại `docker compose up --build -d`.
-
-```bash
-docker compose down       # Dừng, giữ volume và dữ liệu
-docker compose up --build -d  # Khởi động lại; migration và seed có thể chạy lại an toàn
-docker compose down -v    # XÓA dữ liệu PostgreSQL, RabbitMQ, Meilisearch trong volume Compose
-```
-
-## Kiểm thử và CI
-
-Trong `backend/`, chạy `npm ci`, `npm run lint`, `npm run typecheck`, `npm run build`, `npm test`. Lệnh `npm run test:e2e` cần PostgreSQL **thử riêng** đã chạy `npx prisma migrate deploy` và `npm run prisma:seed` với `NODE_ENV=test`, `DEMO_SEED_ENABLED=true`, `SEED_DEFAULT_PASSWORD` tự tạo. Trên Windows, sau khi build, `.\scripts\verify-isolated.ps1` tạo các container tạm, chạy migration, seed hai lần, E2E và kiểm tra tích hợp Redis/RabbitMQ/Meilisearch; script không dùng volume Compose.
-
-[Backend CI](.github/workflows/backend-ci.yml) chạy khi push lên bất kỳ nhánh nào hoặc mở/cập nhật PR: cài theo lockfile, lint, typecheck, build, unit test, migration, seed và E2E trên dịch vụ thử. CI tự tạo thông tin xác thực dùng một lần; **không cần GitHub Secrets** cho workflow kiểm thử này. Không dùng database thật cho CI. Sau khi push, vào tab **Actions** của repository, chọn **Backend CI** và mở run tương ứng commit để xem từng bước build/test cùng log lỗi nếu run thất bại; có workflow trong Git chưa đồng nghĩa GitHub đã chạy thành công.
-
-## Bảo mật
-
-Backend kiểm tra cấu hình bắt buộc khi khởi động, giới hạn đăng nhập/đăng ký theo IP, giới hạn CORS theo origin, hash mật khẩu bằng bcrypt, dùng Prisma ORM và guard kiểm tra tài nguyên. Frontend dùng React JSX để escape nội dung văn bản; không có chỗ render HTML thô trong `frontend/src`. Đây là các biện pháp đã rà soát, không phải chứng nhận toàn bộ OWASP Top 10.
-
-`.env` gốc từng xuất hiện trong lịch sử Git. Sau khi bỏ theo dõi file này, vẫn phải thu hồi/thay mọi khóa và mật khẩu đã dùng từ lịch sử đó trước khi dùng lại; không dán giá trị cũ vào issue, PR hoặc log.
-
----
-
-<div align="center">
-
-# 📚 BOOKSTORE BACKEND
-
-**Hệ thống backend cho website bán sách trực tuyến**
-
-<kbd>NestJS</kbd> <kbd>TypeScript</kbd> <kbd>Node.js</kbd> <kbd>Đang phát triển</kbd>
-
-**[Tổng quan](#tong-quan) · [Công nghệ](#cong-nghe) · [Cài đặt](#cai-dat) · [Kiến trúc](#kien-truc) · [Nhóm thực hiện](#nhom-thuc-hien)**
-
-</div>
-
-# Redis — Hướng dẫn sử dụng cache cho sách và giỏ hàng
-
-Redis được sử dụng để **lưu tạm dữ liệu sách và giỏ hàng**, giúp backend phản hồi nhanh hơn và giảm số lần truy vấn PostgreSQL.
-
-> **Dành cho người mới bắt đầu**
->
-> - Tất cả lệnh trong tài liệu dùng **Git Bash**, chạy tại thư mục `backend`, trừ khi có ghi chú khác.
-> - Nếu hệ thống đã chạy bằng Docker Compose, có thể bắt đầu từ [Bước 2: Kiểm tra Redis](#4-bước-2-kiểm-tra-redis).
-> - Các ví dụ thêm sản phẩm vào giỏ sẽ **thay đổi dữ liệu thật**. Chỉ thử trên môi trường phát triển hoặc tài khoản thử nghiệm.
-
-## Mục lục
-
-1. [Redis là gì?](#1-redis-là-gì)
-2. [Dự án đang cache những gì?](#2-dự-án-đang-cache-những-gì)
-3. [Bước 1: Khởi chạy hệ thống](#3-bước-1-khởi-chạy-hệ-thống)
-4. [Bước 2: Kiểm tra Redis](#4-bước-2-kiểm-tra-redis)
-5. [Bước 3: Thử cache hit và cache miss](#5-bước-3-thử-cache-hit-và-cache-miss)
-6. [Khi dữ liệu thay đổi, cache được xử lý thế nào?](#6-khi-dữ-liệu-thay-đổi-cache-được-xử-lý-thế-nào)
-7. [Lỗi thường gặp](#7-lỗi-thường-gặp)
-
-## 1. Redis là gì?
-
-**Redis** là dịch vụ lưu dữ liệu theo dạng **key → value** (khóa → giá trị) và có tốc độ truy xuất nhanh.
-
-Trong dự án:
-
-- **PostgreSQL:** nơi lưu dữ liệu gốc của sách và giỏ hàng.
-- **Redis:** nơi giữ bản sao tạm thời của dữ liệu backend đã đọc từ PostgreSQL.
-- **Cache:** bản sao tạm thời đó, dùng để tránh truy vấn PostgreSQL nhiều lần cho cùng dữ liệu.
-
-### Ví dụ: Xem chi tiết sách `id = 3`
-
-```text
-Lần đầu gọi GET /books/3
-    → Redis chưa có key book:3 (CACHE MISS)
-    → Backend đọc sách từ PostgreSQL
-    → Lưu bản sao vào Redis (key book:3)
-    → Trả thông tin sách
-
-Lần tiếp theo gọi GET /books/3
-    → Redis đã có key book:3 (CACHE HIT)
-    → Backend trả dữ liệu từ Redis
-    → Không cần truy vấn lại PostgreSQL cho dữ liệu đã cache
-```
-
-### TTL là gì?
-
-**TTL (Time To Live)** là thời gian một key còn hiệu lực. Cache sách và giỏ hàng trong dự án có TTL **300 giây (5 phút)**.
-
-- Khi TTL hết, Redis tự loại bỏ key.
-- Lần đọc tiếp theo sẽ lấy dữ liệu từ PostgreSQL và tạo cache mới.
-- Nếu Redis mất cache hoặc container bị tạo lại, **dữ liệu gốc trong PostgreSQL vẫn còn**.
-
-## 2. Dự án đang cache những gì?
-
-| Chức năng | Key Redis | Cách sử dụng |
-| --- | --- | --- |
-| Danh sách sách | `books:page:<page>:limit:<limit>` | `GET /books` đọc hoặc lưu kết quả theo trang trong 300 giây. **Cần đăng nhập.** |
-| Chi tiết sách | `book:<id>` | `GET /books/:id` đọc hoặc lưu thông tin một sách trong 300 giây. Khi sửa/ngừng bán, backend xóa key chi tiết tương ứng. |
-| Giỏ hàng | `cart:user:<userId>` | `GET /carts` đọc hoặc lưu giỏ hàng trong 300 giây. Thêm/sửa/xóa sản phẩm hoặc đặt hàng thành công sẽ xóa key. **Cần đăng nhập.** |
-
-`RedisService` chuyển dữ liệu thành **JSON** khi lưu và chuyển JSON thành object khi đọc.
-
-> **Lưu ý:** Backend gửi lệnh `PING` để kiểm tra Redis lúc khởi động. Nếu Redis không sẵn sàng, backend có thể không khởi động được. Hiện tại các thao tác đọc/ghi cache **không có cơ chế tự bỏ qua Redis** khi Redis gặp lỗi.
-
-## 3. Bước 1: Khởi chạy hệ thống
-
-### 3.1. Chuẩn bị
-
-1. Cài và mở **Docker Desktop**, đảm bảo Docker Engine đang chạy.
-2. Mở **Git Bash** tại thư mục `backend` của dự án.
-3. Nếu chưa có file `backend/.env`, tạo từ file mẫu:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Mở `.env` và cấu hình các biến bí mật cần thiết:
-
-   ```dotenv
-   POSTGRES_PASSWORD=...
-   RABBITMQ_PASSWORD=...
-   MEILISEARCH_API_KEY=...
-   JWT_SECRET=...
-   ```
-
-   Nếu `.env` đã tồn tại, **giữ các giá trị cũ**, chỉ bổ sung biến còn thiếu. Không commit `.env` lên Git.
-
-> **Đường dẫn Git Bash trên Windows:** Nếu thư mục có ký tự đặc biệt như `[` hoặc `]`, hãy đặt đường dẫn trong dấu nháy đơn, ví dụ: `cd '/c/du-an/[bookstore]/backend'`.
-
-### 3.2. Chạy Docker Compose
-
-```bash
-docker compose config --quiet
-docker compose up -d --build
-docker compose ps --all
-```
-
-Kết quả mong đợi:
-
-| Dịch vụ | Trạng thái |
-| --- | --- |
-| `redis` | `healthy` |
-| `postgres` | `healthy` |
-| `meilisearch` | `healthy` |
-| `rabbitmq` | `healthy` |
-| `backend` | `healthy` |
-| `migrate` | `Exited (0)` — bình thường |
-
-`docker compose config --quiet` không in gì nếu cấu hình hợp lệ. Lần build đầu tiên có thể mất vài phút.
-
-### 3.3. Redis chạy ở đâu?
+## 2. Địa chỉ truy cập và vận hành
 
 | Thành phần | Địa chỉ |
 | --- | --- |
-| Backend truy cập Redis trong mạng Docker | `redis:6379` |
-| Máy host truy cập backend API | `http://localhost:3001` |
+| Frontend | `http://localhost:3000` |
+| API | `http://localhost:3001` |
+| Health | `http://localhost:3001/health` |
+| Swagger UI / OpenAPI JSON | `http://localhost:3001/api/docs` / `http://localhost:3001/api/docs-json` |
+| PostgreSQL, Redis, RabbitMQ, Meilisearch | Chỉ trong mạng Compose, không mở cổng host |
 
-- Backend nhận `REDIS_HOST=redis` và `REDIS_PORT=6379`.
-- Docker Compose **không mở cổng `6379` ra máy host**; sử dụng `docker compose exec` để kiểm tra Redis.
-- Redis trong cấu hình Compose hiện tại **không đặt mật khẩu** và **không có volume lưu cache**.
-- Nếu sửa `BACKEND_PORT` trong `.env`, thay `3001` trong các ví dụ bằng cổng mới.
+API `/auth/login` trả access token sau khi đăng nhập. Tài khoản staff phục vụ thao tác tạo và sửa sách; hai tài khoản customer phục vụ kiểm thử phân quyền sở hữu giỏ hàng và đơn hàng. Nhật ký các dịch vụ được truy xuất bằng `docker compose logs --tail=100 migrate seed-safe search-reindex backend frontend`. Lệnh `docker compose down` dừng hệ thống và giữ dữ liệu. Lệnh `docker compose down -v` **xóa các volume dữ liệu** của Compose project đang chọn.
 
-Xem thêm [DOCKER.md](../../DOCKER.md).
+## 3. Công nghệ và vị trí triển khai
 
-## 4. Bước 2: Kiểm tra Redis
-
-**Kiểm tra Redis từ container:**
-
-```bash
-docker compose exec -T redis redis-cli ping
-```
-
-Kết quả mong đợi:
-
-```text
-PONG
-```
-
-**Kiểm tra API health của backend:**
-
-```bash
-curl -fsS 'http://localhost:3001/health'
-```
-
-Phản hồi dự kiến chứa `"status": "ok"` khi **cả PostgreSQL, Redis và Meilisearch** đều hoạt động.
-
-Nếu có lỗi, kiểm tra trạng thái và log:
-
-```bash
-docker compose ps --all
-docker compose logs --tail=100 redis backend
-```
-
-## 5. Bước 3: Thử cache hit và cache miss
-
-### 5.1. Thử cache chi tiết sách (không cần đăng nhập)
-
-Cần có ít nhất một sách trong PostgreSQL. Nếu chưa có, hãy tạo sách mẫu trên **database phát triển** theo phần [tạo sách để thử tìm kiếm](../search/README.md#44-tạo-sách-mẫu-để-thử-tìm-kiếm), sau đó lấy `id` trả về từ API.
-
-Ví dụ này sử dụng sách có `id = 3`. **Thay `3` bằng ID thực tế của bạn.**
-
-```bash
-BOOK_ID=3
-
-# Xóa bản sao cache cũ để tạo CACHE MISS
-docker compose exec -T redis redis-cli DEL "book:$BOOK_ID"
-
-# Lần đầu: CACHE MISS, đọc PostgreSQL rồi lưu Redis
-curl -fsS "http://localhost:3001/books/$BOOK_ID"
-
-# Lần hai: CACHE HIT, đọc dữ liệu từ Redis
-curl -fsS "http://localhost:3001/books/$BOOK_ID"
-
-# Xem thời gian còn lại và dữ liệu đã cache
-docker compose exec -T redis redis-cli TTL "book:$BOOK_ID"
-docker compose exec -T redis redis-cli GET "book:$BOOK_ID"
-
-# Xem log cache của backend
-docker compose logs --tail=30 backend
-```
-
-**Kết quả cần quan sát:**
-
-- `DEL` chỉ xóa **bản sao trong Redis**, **không xóa sách trong PostgreSQL**.
-- Log backend dự kiến ghi `CACHE MISS: book:3` rồi `CACHE HIT: book:3` (nếu dùng ID `3`).
-- `GET` từ Redis trả về dữ liệu JSON của sách.
-- `TTL` thông thường trả về số giây còn lại, trong khoảng **0–300**.
-
-| Giá trị TTL | Ý nghĩa |
+| Yêu cầu trong hồ sơ | Vị trí triển khai và kiểm chứng |
 | --- | --- |
-| `0` đến `300` | Key còn hiệu lực, sắp hết hạn khi tiến về `0`. |
-| `-2` | Key không tồn tại: chưa tạo, đọc thất bại hoặc đã hết hạn. |
-| `-1` | Key tồn tại nhưng không có TTL; **không phải trạng thái mong đợi** với cache mới tạo của tính năng này. |
+| NestJS Module, Controller, Provider/DI | `backend/src/app.module.ts` và các module nghiệp vụ |
+| DTO/Pipe, Guard, Interceptor | `backend/src/main.ts`, `backend/src/guards/`, `backend/src/common/interceptors/` |
+| Redis cache | `backend/src/redis/`, cache sách và giỏ; [tài liệu kỹ thuật](backend/src/redis/README.md) |
+| PostgreSQL `EXPLAIN ANALYZE`, index tổ hợp | `backend/prisma/schema.prisma`, migrations; [kết quả đo](backend/docs/evidence/postgres-explain-2026-10-20.md) |
+| RabbitMQ và tác vụ định kỳ | `backend/src/infrastructure/rabbitmq/`, `backend/src/infrastructure/cron-job/` |
+| Meilisearch | `backend/src/search/`; [tài liệu kỹ thuật](backend/src/search/README.md) |
+| Docker Compose, dữ liệu mẫu | `compose.yaml`, `backend/Dockerfile`, `backend/prisma/seed.safe.ts` |
+| GitHub Actions | [.github/workflows/backend-ci.yml](.github/workflows/backend-ci.yml) kiểm tra backend và frontend mỗi lần push/PR |
+| Kiểm thử và OpenAPI | `backend/src/**/*.spec.ts`, `backend/test/`, Swagger tại `/api/docs` |
 
-### 5.2. Thử cache danh sách và giỏ hàng (cần đăng nhập)
+## 4. Quy trình kiểm thử
 
-Hai route `GET /books` và `GET /carts` yêu cầu tài khoản đã có trong hệ thống.
-
-> **Chú ý:** Demo seed chỉ chạy khi `DEMO_SEED_ENABLED=true` và `NODE_ENV` là `development` hoặc `test`; có thể chạy lại mà không xóa dữ liệu cũ. Chỉ seed trên môi trường phát triển/kiểm thử.
-
-**Bước A — Đăng nhập bằng `curl`**
-
-Thay email và mật khẩu của tài khoản thử nghiệm:
-
-```bash
-curl -fsS -X POST 'http://localhost:3001/auth/login' \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"email-cua-ban@example.com","password":"mat-khau-cua-ban"}'
-```
-
-Từ JSON trả về, lấy `accessToken` và `user.id`. Gán vào biến Git Bash để dùng ở các lệnh tiếp theo:
+Từ thư mục gốc, các bước kiểm tra backend gồm cài đặt dependency, kiểm tra mã nguồn, kiểm tra kiểu dữ liệu, biên dịch và chạy unit test. Lệnh `cd ..` cuối khối đưa terminal trở về thư mục gốc:
 
 ```bash
-ACCESS_TOKEN='dan-accessToken-tu-ket-qua-dang-nhap'
-USER_ID='dan-user.id-tu-ket-qua-dang-nhap'
+cd backend
+npm ci
+npm run lint
+npm run typecheck
+npm run build
+npm test
+cd ..
 ```
 
-> Không chia sẻ access token, không đưa token hoặc mật khẩu thật vào README/Git. Cách gán thủ công này **không cần cài thêm `jq` hay Node.js trên máy host**.
+Điều kiện chạy `npm run test:e2e` tại `backend/` gồm database **kiểm thử riêng**, các dịch vụ phụ thuộc và biến môi trường `E2E_ISOLATED_DB=YES`. Trong Bash, đặt biến cho riêng lệnh bằng cú pháp `E2E_ISOLATED_DB=YES npm run test:e2e` sau khi đã cấu hình đầy đủ môi trường kiểm thử. Database có dữ liệu thực tế nằm ngoài phạm vi chạy E2E. [Backend CI](.github/workflows/backend-ci.yml) sử dụng Bash trên Ubuntu, tạo database và thông tin xác thực dùng một lần, áp dụng migration, khởi tạo dữ liệu mẫu rồi chạy E2E.
 
-**Bước B — Thử cache danh sách sách**
+Kiểm tra frontend từ thư mục gốc:
 
 ```bash
-# Xóa cache của trang 1, giới hạn 10 sách
-docker compose exec -T redis redis-cli DEL 'books:page:1:limit:10'
-
-# Lần đầu: CACHE MISS
-curl -fsS 'http://localhost:3001/books?page=1&limit=10' \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
-
-# Lần hai: CACHE HIT
-curl -fsS 'http://localhost:3001/books?page=1&limit=10' \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
-
-# Kiểm tra TTL và log
-docker compose exec -T redis redis-cli TTL 'books:page:1:limit:10'
-docker compose logs --tail=30 backend
+cd frontend
+npm ci
+npm run lint
+npm run build
+cd ..
 ```
 
-**Bước C — Thử cache giỏ hàng**
+## 5. Nội dung thực hành và gói bàn giao
+
+Thư mục **[hands-on-lab/](hands-on-lab/README.md)** chứa bài thực hành 40 phút về RabbitMQ, gồm retry có giới hạn, dead queue và ACK/NACK. Gói thực hành gồm starter code, ba bài tập, bốn test, đáp án và biểu mẫu kết quả phục vụ thực hành và chấm chéo. Môi trường chạy sử dụng Node.js và npm, độc lập với backend và các dịch vụ Docker.
+
+Trình tự khởi chạy bài thực hành từ thư mục gốc:
 
 ```bash
-# Đọc giỏ hàng để backend tạo cache nếu chưa có
-curl -fsS 'http://localhost:3001/carts' \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
-
-# Xem TTL của cache giỏ hàng
-docker compose exec -T redis redis-cli TTL "cart:user:$USER_ID"
+cd hands-on-lab
+npm ci
+npm test
 ```
 
-Cache danh sách và giỏ hàng đều có TTL **300 giây**. Giỏ hàng được lưu theo `user.id`, nên mỗi người dùng có key riêng.
+Trạng thái kiểm thử ban đầu của starter là 1 test thành công và 3 test thất bại. Tiêu chí hoàn thành là 4/4 test thành công. Gói bàn giao gồm toàn bộ thư mục `hands-on-lab/`, được nộp cùng báo cáo và loại trừ `node_modules/`.
 
-### 5.3. Thử xóa cache khi thêm sản phẩm vào giỏ
+## 6. Biện pháp bảo mật và phạm vi kiểm chứng
 
-Dùng tài khoản và biến `ACCESS_TOKEN`, `USER_ID` từ mục 5.2. Thay `BOOK_ID` bằng ID sách hợp lệ (ví dụ `3`).
+Backend giới hạn CORS theo origin, sử dụng DTO validation, guard phân quyền, bcrypt cho mật khẩu và Prisma cho truy vấn dữ liệu. Frontend hiển thị văn bản qua React JSX. Phạm vi kiểm chứng hiện tại bao gồm các biện pháp được ghi nhận trong mã nguồn; việc kiểm thử toàn bộ OWASP Top 10 chưa được thực hiện. Lịch sử Git từng chứa tệp `.env` gốc. Thay thế toàn bộ khóa và mật khẩu đã xuất hiện trong lịch sử là điều kiện trước khi triển khai thực tế. Phạm vi sử dụng AI và phương pháp kiểm chứng được ghi trong [AI Disclosure](backend/docs/AI_DISCLOSURE.md).
 
-```bash
-BOOK_ID=3
-
-# Thêm một sản phẩm vào giỏ hàng thật
-curl -fsS -X POST 'http://localhost:3001/carts/items' \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d "{\"bookId\":$BOOK_ID,\"quantity\":1}"
-
-# Key giỏ hàng vừa bị xóa: dự kiến trả -2
-docker compose exec -T redis redis-cli TTL "cart:user:$USER_ID"
-
-# Đọc lại giỏ hàng: lấy dữ liệu mới từ PostgreSQL và cache lại
-curl -fsS 'http://localhost:3001/carts' \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
-```
-
-Sau thao tác thêm sản phẩm, backend xóa key `cart:user:<userId>`; vì vậy `TTL` dự kiến trả `-2` **nếu chưa có yêu cầu khác tạo lại cache**. Lần đọc giỏ hàng tiếp theo sẽ tạo cache mới.
-
-> Lệnh `POST /carts/items` **thay đổi giỏ hàng thật** của tài khoản đang dùng.
-
-## 6. Khi dữ liệu thay đổi, cache được xử lý thế nào?
-
-| Thao tác | Backend làm gì với cache? |
-| --- | --- |
-| Tạo sách | Lưu PostgreSQL; sách mới chưa có cache chi tiết để xóa. |
-| Sửa/ngừng bán sách | Cập nhật PostgreSQL rồi xóa `book:<id>` tương ứng. |
-| Thêm/sửa/xóa sản phẩm giỏ hàng | Cập nhật PostgreSQL rồi xóa `cart:user:<userId>`. |
-| Đặt hàng thành công | Xóa cache giỏ hàng sau khi giao dịch database hoàn tất. |
-| TTL hết 300 giây | Redis tự xóa key; lần đọc sau tải lại dữ liệu từ PostgreSQL. |
-
-### Giới hạn hiện tại: Cache danh sách có thể bị cũ
-
-Cache danh sách được lưu bằng key:
-
-```text
-books:page:<page>:limit:<limit>
-```
-
-Nhưng khi tạo/sửa/ngừng bán sách, code hiện tại lại xóa key:
-
-```text
-books:list
-```
-
-**Hai key không trùng nhau**, nên các trang danh sách đã cache **không được xóa ngay**. Kết quả `GET /books` có thể là dữ liệu cũ trong tối đa khoảng **300 giây** kể từ lần cache gần nhất, tùy TTL còn lại.
-
-Ngoài ra, thay đổi tồn kho khi đặt hàng **chưa chủ động xóa cache chi tiết sách**.
-
-Khi cần kiểm tra dữ liệu mới ngay trong môi trường phát triển, xóa **đúng key**:
-
-```bash
-# Ví dụ xóa cache danh sách trang 1, 10 sách/trang
-docker compose exec -T redis redis-cli DEL 'books:page:1:limit:10'
-
-# Ví dụ xóa cache chi tiết sách id = 3
-docker compose exec -T redis redis-cli DEL 'book:3'
-```
-
-Không dùng lệnh xóa toàn bộ Redis (`FLUSHALL`, `FLUSHDB`) trên môi trường có dữ liệu cần giữ.
-
-## 7. Lỗi thường gặp
-
-| Hiện tượng | Cách hiểu và kiểm tra |
-| --- | --- |
-| `redis-cli ping` không trả `PONG` | Kiểm tra `docker compose ps --all` và `docker compose logs --tail=100 redis`. |
-| `/health` lỗi dù Redis có `PONG` | Endpoint còn kiểm tra PostgreSQL và Meilisearch; xem log backend và trạng thái hai service này. |
-| Không thấy key sau khi gọi API | Kiểm tra API có trả thành công, sách/tài khoản có tồn tại, tên key đúng và key chưa hết TTL 300 giây. |
-| Không thấy `CACHE HIT` trong log | Kiểm tra có gọi lại **cùng API và tham số** khi key còn hiệu lực; xem `docker compose logs --tail=100 backend`. |
-| Danh sách sách trả dữ liệu cũ | Cache đang lưu theo `books:page:<page>:limit:<limit>`, nhưng code lại xóa `books:list`; kiểm tra TTL của key từng trang. |
-| API trả `401 Unauthorized` | `GET /books`, `GET /carts` yêu cầu token đăng nhập hợp lệ; kiểm tra `ACCESS_TOKEN`. |
-
-### Mã nguồn liên quan
-
-- [`redis.service.ts`](redis.service.ts) — đọc/ghi cache Redis.
-- [`books.service.ts`](../books/books.service.ts) — cache danh sách và chi tiết sách.
-- [`carts.service.ts`](../carts/carts.service.ts) — cache giỏ hàng.
-- [`orders.service.ts`](../orders/orders.service.ts) — xóa cache giỏ hàng sau khi đặt hàng.
-
-
----
-
-<a id="tong-quan"></a>
-## ✨ Tổng quan
-
-**Bookstore Backend** là đề tài tìm hiểu và xây dựng backend cho hệ thống bán sách trực tuyến bằng **NestJS** và **TypeScript**. Dự án tập trung vào tổ chức mã nguồn theo module, xây dựng RESTful API, xử lý nghiệp vụ và thực hành quy trình phát triển phần mềm.
-
-> **Phạm vi tài liệu:** README này được biên soạn từ *hồ sơ đề tài*, chưa đối chiếu với repository. Các chức năng, tích hợp và cấu hình ghi **dự kiến** hoặc **tùy chọn** cần được cập nhật sau khi triển khai thực tế.
-
-**Hướng dẫn đã đối chiếu mã nguồn:** [Meilisearch: tìm kiếm sách](backend/src/search/README.md) · [Redis: cache sách và giỏ hàng](backend/src/redis/README.md). Hai hướng dẫn này có bước chạy và kết quả minh họa cho người mới bắt đầu.
-
-### 🎯 Mục tiêu
-
-- Nắm vững **Module, Controller, Provider** và **Dependency Injection** của NestJS.
-- Xây dựng các API có cấu trúc rõ ràng; nghiên cứu **DTO, Validation Pipe, Guard** và **Interceptor**.
-- Khảo sát **cache, tối ưu truy vấn, hàng đợi xử lý nền** và **tìm kiếm nâng cao**.
-- Thực hành **Git, kiểm thử, Docker, CI/CD, bảo mật** và tài liệu API.
-
-<a id="chuc-nang"></a>
-## 🛒 Chức năng dự kiến
-
-| Người dùng | Quản trị viên |
-| :-- | :-- |
-| Đăng ký, đăng nhập | Quản lý sách và danh mục |
-| Xem danh sách và chi tiết sách | Quản lý người dùng |
-| Tìm kiếm sách | Quản lý đơn hàng |
-| Quản lý giỏ hàng, đặt hàng | Cập nhật trạng thái đơn hàng |
-| Xem lịch sử mua hàng | — |
-
-> Đây là **phạm vi chức năng đề xuất**, không phải danh sách tính năng đã hoàn thành.
-
-<a id="cong-nghe"></a>
-## 🧰 Công nghệ
-
-| Nhóm | Công nghệ / kỹ thuật | Vai trò |
-| :-- | :-- | :-- |
-| **Cốt lõi** | NestJS · TypeScript · Node.js | Xây dựng backend theo kiến trúc module |
-| **Dữ liệu & hiệu năng** | PostgreSQL · Redis | Lưu trữ, phân tích truy vấn và cache |
-| **Xử lý nền** | RabbitMQ · tác vụ định kỳ | Xử lý công việc bất đồng bộ |
-| **Tìm kiếm** | Meilisearch | Tìm kiếm sách nâng cao |
-| **Hạ tầng** | Docker · Docker Compose | Đóng gói, tái lập môi trường |
-| **Tự động hóa** | GitHub Actions | Chạy build và test khi push |
-
-**NestJS là công nghệ chính.** Các công nghệ ở những nhóm còn lại thuộc phạm vi nghiên cứu, mở rộng hoặc công cụ hỗ trợ; chỉ giữ lại trong danh sách triển khai khi dự án đã tích hợp thực tế.
-
-<a id="kien-truc"></a>
-## 🏗️ Kiến trúc NestJS
-
-```text
-HTTP Request
-     │
-     ▼
-   Guard ──► Validation Pipe ──► Controller
-                                    │
-                                    ▼
-                              Service / Provider
-                                    │
-                                    ▼
-                               Data / Services
-                                    │
-                                    ▼
-                              HTTP Response
-```
-
-*Sơ đồ minh họa các thành phần NestJS; vị trí và phạm vi áp dụng thực tế phụ thuộc cấu hình của từng route.*
-
-| Thành phần | Vai trò |
-| :-- | :-- |
-| **Module** | Gom các thành phần thuộc cùng một chức năng. |
-| **Controller** | Tiếp nhận request và trả response. |
-| **Provider / Service** | Chứa logic nghiệp vụ, được cấp phát qua Dependency Injection. |
-| **DTO + Validation Pipe** | Định nghĩa và kiểm tra dữ liệu đầu vào. |
-| **Guard** | Kiểm soát quyền truy cập API. |
-| **Interceptor** | Can thiệp vào luồng xử lý request/response, ví dụ chuẩn hóa kết quả. |
-
-<details>
-<summary><strong>📁 Cấu trúc thư mục minh họa</strong></summary>
-
-```text
-src/
-├── main.ts
-├── app.module.ts
-├── auth/
-│   ├── auth.module.ts
-│   ├── auth.controller.ts
-│   ├── auth.service.ts
-│   └── dto/
-├── users/
-├── books/
-├── categories/
-├── carts/
-├── orders/
-└── common/
-    ├── guards/
-    ├── interceptors/
-    └── filters/
-test/
-Dockerfile
-docker-compose.yml
-package.json
-README.md
-```
-
-Cần thay cấu trúc minh họa bằng cây thư mục thực tế của repository.
-
-</details>
+Các kết quả runtime trong `backend/docs/evidence/` được ghi nhận theo ngày, phiên bản và phạm vi kiểm thử riêng. Minh chứng cho phiên bản bàn giao được xác lập bằng kết quả kiểm chứng trên commit tương ứng.

@@ -5,7 +5,8 @@ import { NotificationType } from "../generated/prisma/enums.js";
 
 describe("NotificationsService", () => {
     let service: NotificationsService;
-    const create = vi.fn();
+    const upsert = vi.fn();
+    const findUnique = vi.fn();
 
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
@@ -13,7 +14,7 @@ describe("NotificationsService", () => {
                 NotificationsService,
                 {
                     provide: PrismaService,
-                    useValue: { notification: { create } },
+                    useValue: { notification: { upsert, findUnique } },
                 },
             ],
         }).compile();
@@ -25,12 +26,24 @@ describe("NotificationsService", () => {
         expect(service).toBeDefined();
     });
 
-    it("treats a duplicate cron event as already delivered", async () => {
-        create.mockRejectedValueOnce({ code: "P2002" });
-        const result = await service.createNotification({ notifyType: NotificationType.INFO, userId: 1, message: "low stock" }, "low-stock:2026-10-19");
-        expect(result).toBeNull();
-        expect(create).toHaveBeenCalledWith(expect.objectContaining({
-            data: expect.objectContaining({ eventId: "low-stock:2026-10-19" }),
-        }));
+    it("uses the event ID as an idempotency key for cron notifications", async () => {
+        const notification = { id: 1 };
+        upsert.mockResolvedValue(notification);
+        await expect(service.createNotificationOnce("low-stock:2026-10-19:1", {
+            notifyType: NotificationType.INFO, userId: 1, message: "low stock",
+        })).resolves.toBe(notification);
+        expect(upsert).toHaveBeenCalledWith({
+            where: { eventId: "low-stock:2026-10-19:1" },
+            create: { eventId: "low-stock:2026-10-19:1", notifyType: NotificationType.INFO, userId: 1, message: "low stock" },
+            update: {},
+        });
+    });
+
+    it("accepts concurrent deliveries of the same order event", async () => {
+        const existing = { id: 4, eventId: "order.created:2" };
+        upsert.mockRejectedValueOnce({ code: "P2002" });
+        findUnique.mockResolvedValueOnce(existing);
+        await expect(service.createOrderNotification({ id: 2, userId: 1 } as any)).resolves.toBe(existing);
+        expect(findUnique).toHaveBeenCalledWith({ where: { eventId: existing.eventId } });
     });
 });

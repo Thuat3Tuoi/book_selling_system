@@ -14,8 +14,8 @@ Lệnh `ping` phải thành công. Với `RABBITMQ_QUEUE=book_queue` mặc đị
 
 | Queue | Công dụng |
 | --- | --- |
-| `book_queue.outbox-v1` | Consumer nhận sự kiện tạo đơn hàng. |
-| `book_queue.outbox-v1.dlq` | Giữ message mà consumer từ chối do xử lý lỗi. |
+| `book_queue` | Consumer nhận sự kiện tạo đơn hàng và thay đổi sách. |
+| `book_queue.dead` | Giữ message mà consumer không xử lý được sau ba lần thử. |
 
 Nếu đổi `RABBITMQ_QUEUE` trong `.env` ở thư mục gốc, thay tiền tố `book_queue` tương ứng. Queue DLQ có thể chỉ xuất hiện sau khi consumer xử lý sự kiện đầu tiên. Compose không mở cổng AMQP hoặc giao diện quản trị RabbitMQ ra máy host.
 
@@ -42,7 +42,7 @@ Chỉ làm trên database phát triển. Compose ở thư mục gốc đã chạ
    docker compose logs --tail=100 backend rabbitmq
    ```
 
-`POST /orders` ghi đơn hàng và một bản ghi `OutboxEvent` trong cùng transaction PostgreSQL. Publisher gửi bản ghi đó đến RabbitMQ; consumer tạo notification và xác nhận message. `OutboxEvent.status=PUBLISHED` nghĩa là đã gửi đến broker, không phải bằng chứng notification đã được tạo. Notification có `eventId` duy nhất để tránh tạo trùng khi sự kiện được phát lại.
+`POST /orders` ghi đơn hàng và một bản ghi `OutboxEvent` trong cùng transaction PostgreSQL. Publisher gửi bản ghi đó đến RabbitMQ; consumer tạo notification và xác nhận message. `OutboxEvent.publishedAt` cho biết broker đã nhận sự kiện; notification có `eventId` duy nhất để tránh tạo trùng khi sự kiện được phát lại.
 
 ## Xem outbox khi thông báo chưa xuất hiện
 
@@ -50,14 +50,14 @@ Kiểm tra outbox bằng tài khoản trong `.env` ở thư mục gốc (lệnh 
 
 ```bash
 docker compose exec -T postgres psql -U bookstore -d bookstore <<'SQL'
-SELECT id, status, attempts, "nextAttemptAt"
+SELECT id, topic, "publishedAt", attempts, "nextAttemptAt"
 FROM "OutboxEvent"
 ORDER BY "createdAt" DESC
 LIMIT 10;
 SQL
 ```
 
-Nếu `status=PENDING` và `attempts` tăng, xem log `backend` và trạng thái RabbitMQ. Publisher thử lại theo thời gian chờ tăng dần, tối đa 5 phút. Nếu outbox đã `PUBLISHED` nhưng không có notification, kiểm tra queue `.dlq` và log consumer. Message lỗi ở consumer được đưa sang DLQ; ứng dụng không tự phát lại message trong DLQ.
+Nếu `publishedAt IS NULL` và `attempts` tăng, xem log `backend` và trạng thái RabbitMQ. Publisher thử lại theo thời gian chờ tăng dần, tối đa 5 phút. Nếu đã có `publishedAt` nhưng chưa có notification, kiểm tra queue `.dead` và log consumer. Message lỗi ở consumer được đưa sang queue này; ứng dụng không tự phát lại message trong queue.
 
 ## Xử lý sự cố
 
@@ -68,4 +68,4 @@ Nếu `status=PENDING` và `attempts` tăng, xem log `backend` và trạng thái
 | Đơn hàng đã tạo nhưng chưa có thông báo | Kiểm tra `OutboxEvent`, đợi lượt gửi kế tiếp, rồi xem log backend và số message trong DLQ. |
 | DLQ có message | Xác định lỗi consumer từ log và dữ liệu liên quan trước khi xử lý lại message; không xóa queue để thử lại. |
 
-Mã nguồn: [cấu hình producer](rabbitmq.module.ts), [publisher](../../orders/order-outbox.publisher.ts), [consumer](../../orders/dtos/consumers/order-created.consumer.ts).
+Mã nguồn: [cấu hình producer](rabbitmq.module.ts), [publisher](outbox-publisher.service.ts), [consumer](../../orders/dtos/consumers/order-created.consumer.ts).

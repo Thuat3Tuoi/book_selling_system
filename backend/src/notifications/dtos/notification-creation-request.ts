@@ -1,11 +1,11 @@
-import { IsInt, IsNotEmpty, IsString, Min } from "class-validator";
+import { IsEnum, IsInt, IsNotEmpty, IsString, Min } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
+import { NotificationType } from "../../generated/prisma/enums.js";
 
 export class NotificationCreationRequest {
-    @IsString()
-    @IsNotEmpty()
-    @ApiProperty()
-    notifyType!: string;
+    @IsEnum(NotificationType)
+    @ApiProperty({ enum: NotificationType })
+    notifyType!: NotificationType;
 
     @IsInt()
     @Min(1)

@@ -36,8 +36,8 @@ describe("HTTP authorization and validation", () => {
                 const identity = req.headers.authorization?.replace("Bearer ", "");
                 if (!identity) return false;
                 req.user = identity === "staff"
-                    ? { id: 9, role: "STAFF" }
-                    : { id: identity === "alice" ? 1 : 2, role: "CUSTOMER" };
+                    ? { id: 9, role: { roleName: "STAFF" } }
+                    : { id: identity === "alice" ? 1 : 2, role: { roleName: "CUSTOMER" } };
                 return true;
             },
         }).compile();
@@ -92,27 +92,27 @@ describe("HTTP authorization and validation", () => {
     });
 
     it("passes separate identities to order reads and returns 404 for cross access", async () => {
-        orders.getOrderById.mockImplementation((id, userId) => {
-            if (id === 11 && userId === 1) return { id, userId };
+        orders.getOrderById.mockImplementation((id, user) => {
+            if (id === 11 && user.id === 1) return { id, userId: user.id };
             throw new NotFoundException();
         });
         const server = app.getHttpServer();
         await request(server).get("/orders/11").set("Authorization", "Bearer alice").expect(200);
         await request(server).get("/orders/11").set("Authorization", "Bearer bob").expect(404);
-        expect(orders.getOrderById).toHaveBeenCalledWith(11, 1);
-        expect(orders.getOrderById).toHaveBeenCalledWith(11, 2);
+        expect(orders.getOrderById).toHaveBeenCalledWith(11, expect.objectContaining({ id: 1 }));
+        expect(orders.getOrderById).toHaveBeenCalledWith(11, expect.objectContaining({ id: 2 }));
     });
 
     it("returns 404 for cross-account PATCH and allows the owner", async () => {
-        orders.updateOrder.mockImplementation((id, dto, userId) => {
-            if (id === 11 && userId === 1) return { id, userId, ...dto };
+        orders.updateOrder.mockImplementation((id, dto, user) => {
+            if (id === 11 && user.id === 1) return { id, userId: user.id, ...dto };
             throw new NotFoundException();
         });
         const server = app.getHttpServer();
         const dto = { shippingAddress: "456 Nguyen Hue, District 1" };
         await request(server).patch("/orders/11").set("Authorization", "Bearer alice").send(dto).expect(200);
         await request(server).patch("/orders/11").set("Authorization", "Bearer bob").send(dto).expect(404);
-        expect(orders.updateOrder).toHaveBeenCalledWith(11, expect.objectContaining(dto), 1);
-        expect(orders.updateOrder).toHaveBeenCalledWith(11, expect.objectContaining(dto), 2);
+        expect(orders.updateOrder).toHaveBeenCalledWith(11, expect.objectContaining(dto), expect.objectContaining({ id: 1 }));
+        expect(orders.updateOrder).toHaveBeenCalledWith(11, expect.objectContaining(dto), expect.objectContaining({ id: 2 }));
     });
 });

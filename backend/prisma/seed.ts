@@ -430,10 +430,10 @@ async function main() {
                         createdAt: date("2026-03-20T08:46:00.000Z"),
                     },
                 ]) {
-                const eventKey = `demo:${notification.notifyType}:${notification.createdAt.toISOString()}`;
+                const eventId = `demo:${notification.notifyType}:${notification.createdAt.toISOString()}`;
                 await tx.notification.upsert({
-                    where: { eventKey }, update: {},
-                    create: { ...notification, eventKey },
+                    where: { eventId }, update: {},
+                    create: { ...notification, eventId },
                 });
             }
         },

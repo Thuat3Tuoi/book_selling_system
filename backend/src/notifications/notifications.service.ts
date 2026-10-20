@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { NotificationCreationRequest } from "./dtos/notification-creation-request.js";
 import type { Notification, Order } from "../generated/prisma/client.js";
+import { NotificationType } from "../generated/prisma/enums.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { canManageCatalog, type AuthenticatedUser } from "../auth/authenticated-user.js";
 
@@ -19,23 +20,30 @@ export class NotificationsService {
     };
 
     createOrderNotification = async (order: Order): Promise<Notification> => {
-        const eventKey = `order.created:${order.id}`;
-        return this.prismaService.notification.upsert({
-            where: { eventKey },
-            create: {
-                eventKey,
-                notifyType: "THONG BAO",
-                userId: order.userId,
-                message: JSON.stringify(order),
-            },
-            update: {},
-        });
+        const eventId = `order.created:${order.id}`;
+        try {
+            return await this.prismaService.notification.upsert({
+                where: { eventId },
+                create: {
+                    eventId,
+                    notifyType: NotificationType.ORDER_CREATED,
+                    userId: order.userId,
+                    message: `Order #${order.id} created`,
+                },
+                update: {},
+            });
+        } catch (error) {
+            if ((error as { code?: string }).code !== "P2002") throw error;
+            const existing = await this.prismaService.notification.findUnique({ where: { eventId } });
+            if (existing) return existing;
+            throw error;
+        }
     };
 
-    createNotificationOnce = async (eventKey: string, request: NotificationCreationRequest): Promise<Notification> => {
+    createNotificationOnce = async (eventId: string, request: NotificationCreationRequest): Promise<Notification> => {
         return this.prismaService.notification.upsert({
-            where: { eventKey },
-            create: { eventKey, notifyType: request.notifyType, userId: request.userId, message: request.message },
+            where: { eventId },
+            create: { eventId, notifyType: request.notifyType, userId: request.userId, message: request.message },
             update: {},
         });
     };

@@ -53,10 +53,10 @@ describe("CartsService", () => {
             );
             await service.getCartById(7);
             await service.getCartById(8);
-            expect(redis.get).toHaveBeenNthCalledWith(1, "cart:user:7");
-            expect(redis.get).toHaveBeenNthCalledWith(2, "cart:user:8");
-            expect(redis.set).toHaveBeenCalledWith("cart:user:7", expect.objectContaining({ userId: 7 }), 300);
-            expect(redis.set).toHaveBeenCalledWith("cart:user:8", expect.objectContaining({ userId: 8 }), 300);
+            expect(redis.get).toHaveBeenNthCalledWith(1, "cart:user:7:rev:0:catalog:0");
+            expect(redis.get).toHaveBeenNthCalledWith(2, "cart:user:8:rev:0:catalog:0");
+            expect(redis.set).toHaveBeenCalledWith("cart:user:7:rev:0:catalog:0", expect.objectContaining({ userId: 7 }), 300);
+            expect(redis.set).toHaveBeenCalledWith("cart:user:8:rev:0:catalog:0", expect.objectContaining({ userId: 8 }), 300);
         });
         it("cache hit: trả giỏ từ Redis, không truy vấn DB", async () => {
             redis.get.mockResolvedValue(cart);

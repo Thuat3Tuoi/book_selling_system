@@ -24,6 +24,7 @@ $env:REDIS_HOST = '127.0.0.1'
 $env:REDIS_PORT = '56380'
 $env:SEED_DEFAULT_PASSWORD = $seedPassword
 $env:DEMO_SEED_ENABLED = 'true'
+$env:E2E_ISOLATED_DB = 'YES'
 $env:NODE_ENV = 'test'
 $env:CORS_ORIGINS = 'http://localhost:3000'
 $env:PORT = '53002'
@@ -57,7 +58,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Migration failed' }
     npm run prisma:seed | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Demo seed failed' }
-    'INSERT INTO "Role" ("roleName", "status") VALUES (''EXTERNAL_TEST'', true);' | docker exec -i $pgName psql -U postgres -d review -q | Out-Null
+    $externalIsbn = "external-$tag"
+    "INSERT INTO `"Book`" (`"title`", `"isbn`", `"description`", `"author`", `"category`", `"price`", `"stockQuantity`", `"coverImageUrl`", `"updatedAt`") VALUES ('External test book', '$externalIsbn', 'Preserve non-demo data', 'Test', 'Test', 1, 1, 'https://example.com/external.jpg', CURRENT_TIMESTAMP);" |
+        docker exec -i $pgName psql -U postgres -d review -q | Out-Null
     $countSql = 'SELECT count(*) FROM "Book";'
     $bookCountBefore = ($countSql | docker exec -i $pgName psql -U postgres -d review -At).Trim()
     $previousErrorAction = $ErrorActionPreference
@@ -66,11 +69,11 @@ try {
     $secondSeedExit = $LASTEXITCODE
     $ErrorActionPreference = $previousErrorAction
     $bookCountAfter = ($countSql | docker exec -i $pgName psql -U postgres -d review -At).Trim()
-    $externalRoleCount = ('SELECT count(*) FROM "Role" WHERE "roleName" = ''EXTERNAL_TEST'';' | docker exec -i $pgName psql -U postgres -d review -At).Trim()
-    if ($secondSeedExit -ne 0 -or $bookCountBefore -ne $bookCountAfter -or $externalRoleCount -ne '1') {
+    $externalBookCount = ("SELECT count(*) FROM `"Book`" WHERE `"isbn`" = '$externalIsbn';" | docker exec -i $pgName psql -U postgres -d review -At).Trim()
+    if ($secondSeedExit -ne 0 -or $bookCountBefore -ne $bookCountAfter -or $externalBookCount -ne '1') {
         throw 'Demo seed is not repeatable'
     }
-    Write-Output "SeedIdempotent=true; NonDemoRolePreserved=true; BookCount=$bookCountAfter"
+    Write-Output "SeedIdempotent=true; NonDemoBookPreserved=true; BookCount=$bookCountAfter"
     npm run test:e2e
     if ($LASTEXITCODE -ne 0) { throw 'E2E tests failed' }
 

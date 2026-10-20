@@ -12,13 +12,15 @@ try {
     await db.connect();
     await channel.assertQueue(queue, { durable: true });
     await channel.assertQueue(`${queue}.dead`, { durable: true });
+    const order = (await db.query('SELECT "id", "userId" FROM "Order" ORDER BY "id" LIMIT 1')).rows[0];
+    if (!order) throw new Error("No seeded order available for RabbitMQ verification");
     const publish = (data) => channel.sendToQueue(
         queue,
         Buffer.from(JSON.stringify({ pattern: "order.created", data })),
         { persistent: true },
     );
-    publish({ id: 1, userId: 3 });
-    publish({ id: 1, userId: 3 });
+    publish({ id: order.id, userId: order.userId });
+    publish({ id: order.id, userId: order.userId });
     publish({ id: 999999, userId: 999999 });
     await channel.waitForConfirms();
 
@@ -26,8 +28,8 @@ try {
     let deadMessages = 0;
     for (let attempt = 0; attempt < 50; attempt++) {
         const result = await db.query(
-            'SELECT count(*)::int AS count FROM "Notification" WHERE "eventKey" = $1',
-            ["order.created:1"],
+            'SELECT count(*)::int AS count FROM "Notification" WHERE "eventId" = $1',
+            [`order.created:${order.id}`],
         );
         notificationCount = result.rows[0].count;
         deadMessages = (await channel.checkQueue(`${queue}.dead`)).messageCount;

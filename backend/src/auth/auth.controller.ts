@@ -8,6 +8,7 @@ import {
     Post,
     Req,
     Res,
+    UnauthorizedException,
     UseGuards,
 } from "@nestjs/common";
 
@@ -52,12 +53,15 @@ export class AuthController {
     @Post("refresh-token")
     @ApiOperation({ summary: "Refresh access token using body or refresh cookie" })
     @ApiEnvelopeResponse(201, AccessTokenResponseDto)
-    async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request) {
+    async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
         const refreshToken = dto.refreshToken ?? req.cookies?.refreshToken;
         if (!refreshToken) {
             throw new BadRequestException("Refresh Token is required");
         }
-        return this.authService.refreshAccessToken(refreshToken);
+        this.authService.assertCookieOrigin(req);
+        const result = await this.authService.rotateRefreshToken(refreshToken, res);
+        if (!result) throw new UnauthorizedException("Refresh Token is invalid");
+        return result;
     }
 
     @UseGuards(JwtAuthGuard)
@@ -73,6 +77,7 @@ export class AuthController {
         const refreshToken = req.cookies?.refreshToken;
 
         if (refreshToken) {
+            this.authService.assertCookieOrigin(req);
             await this.authService.logout(refreshToken);
         }
 

@@ -51,9 +51,14 @@ describe("low stock cron across two application instances (e2e)", () => {
             timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit",
         }).formatToParts(new Date());
         const part = (type: "year" | "month" | "day") => dateParts.find((item) => item.type === type)?.value;
-        const eventId = `low-stock:${part("year")}-${part("month")}-${part("day")}`;
-        const stored = await prisma.notification.findMany({ where: { eventId } });
-        expect(stored).toHaveLength(1);
-        expect(JSON.parse(stored[0].message)).not.toHaveLength(0);
+        const eventPrefix = `low-stock:${part("year")}-${part("month")}-${part("day")}:`;
+        const stored = await prisma.notification.findMany({ where: { eventId: { startsWith: eventPrefix } } });
+        const recipients = await prisma.user.count({
+            where: { status: true, role: { roleName: { in: ["ADMIN", "STAFF"] } } },
+        });
+        expect(stored).toHaveLength(recipients);
+        expect(recipients).toBeGreaterThan(0);
+        expect(new Set(stored.map(({ userId }) => userId)).size).toBe(recipients);
+        for (const notification of stored) expect(JSON.parse(notification.message)).not.toHaveLength(0);
     }, 15_000);
 });

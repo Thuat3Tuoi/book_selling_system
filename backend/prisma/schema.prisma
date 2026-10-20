@@ -145,11 +145,10 @@ model Notification {
   status Boolean @default(true)
 
   createdAt DateTime @default(now())
-  eventKey String? @unique
 }
 
 model OutboxEvent {
-  id            Int       @id @default(autoincrement())
+  id            String    @id @default(uuid())
   topic         String
   payload       Json
   createdAt     DateTime  @default(now())

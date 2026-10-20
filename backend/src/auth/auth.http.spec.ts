@@ -10,7 +10,10 @@ import { ThrottlerModule } from "@nestjs/throttler";
 
 describe("Auth HTTP response and refresh validation", () => {
     let app: INestApplication;
-    const authService = { refreshAccessToken: vi.fn().mockResolvedValue({ accessToken: "new-access" }) };
+    const authService = {
+        assertCookieOrigin: vi.fn(),
+        rotateRefreshToken: vi.fn().mockResolvedValue({ accessToken: "new-access" }),
+    };
 
     beforeAll(async () => {
         const module = await Test.createTestingModule({
@@ -43,7 +46,7 @@ describe("Auth HTTP response and refresh validation", () => {
             .post("/auth/refresh-token")
             .set("Cookie", "refreshToken=saved-token")
             .expect(201, { accessToken: "new-access" });
-        expect(authService.refreshAccessToken).toHaveBeenCalledWith("saved-token");
+        expect(authService.rotateRefreshToken).toHaveBeenCalledWith("saved-token", expect.anything());
 
         await request(app.getHttpServer())
             .post("/auth/refresh-token")

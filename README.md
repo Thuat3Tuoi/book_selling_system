@@ -1,71 +1,126 @@
 # Book Selling System
 
-Hệ thống bán sách gồm REST API NestJS 12 và giao diện Next.js 16. Backend dùng Prisma/PostgreSQL, Redis, RabbitMQ và Meilisearch. Docker Compose chạy backend cùng các dịch vụ phụ thuộc; frontend chạy riêng.
+Hệ thống bán sách gồm frontend Next.js, API NestJS và các dịch vụ PostgreSQL, Redis, RabbitMQ, Meilisearch. Docker Compose khởi động toàn bộ hệ thống; máy chạy chỉ cần Docker Engine cùng Docker Compose (hoặc Docker Desktop trên Windows).
 
-## Bắt đầu
+## Khởi chạy
 
-Yêu cầu Node.js 22, npm và Docker Desktop. Trong `backend`, sao chép `.env.example` thành `.env` rồi điền `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, `MEILISEARCH_API_KEY` và `JWT_SECRET`. Không commit `.env`.
+Các lệnh dưới đây dùng Bash trên Linux hoặc Git Bash trên Windows, tại thư mục gốc của repository.
+
+1. Sao chép cấu hình:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Mở `.env` và đặt **năm giá trị riêng**: `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, `MEILISEARCH_API_KEY`, `JWT_SECRET`, `SEED_DEFAULT_PASSWORD`. Dùng ký tự an toàn trong URL (ví dụ chuỗi hex) cho hai mật khẩu PostgreSQL và RabbitMQ. `.env` không được commit lên Git.
+3. Khởi động:
+
+   ```bash
+   docker compose up --build -d
+   docker compose ps --all
+   ```
+
+Compose đợi PostgreSQL sẵn sàng, chạy Prisma migration, thêm dữ liệu mẫu còn thiếu, lập chỉ mục sách, rồi mới khởi động API và frontend. Seed mặc định phục vụ **môi trường phát triển**. Không dùng cấu hình seed mẫu này cho production.
+
+| Địa chỉ mặc định | Nội dung |
+| --- | --- |
+| `http://localhost:3000` | Giao diện bán sách |
+| `http://localhost:3001/health` | Kiểm tra API và PostgreSQL/Redis/Meilisearch |
+| `http://localhost:3001/api-docs` | Swagger UI |
+| `http://localhost:3001/api-docs-json` | OpenAPI JSON |
+
+Tài khoản mẫu: `customer-a@bookstore.example.com`, `customer-b@bookstore.example.com`, `staff@bookstore.example.com`. Mật khẩu của tài khoản **được tạo mới** là `SEED_DEFAULT_PASSWORD` trong `.env`. Seed không đổi mật khẩu tài khoản đã tồn tại.
+
+## Kiến trúc container
+
+```mermaid
+flowchart LR
+    Browser["Trình duyệt"] -->|"localhost:3000"| Frontend["frontend / Next.js"]
+    Browser -->|"localhost:3001"| Backend["backend / NestJS"]
+    Frontend -->|"mạng web: backend:3001"| Backend
+    Backend -->|"mạng data"| Postgres["postgres"]
+    Backend -->|"mạng data"| Redis["redis"]
+    Backend -->|"mạng data"| RabbitMQ["rabbitmq"]
+    Backend -->|"mạng data"| Meili["meilisearch"]
+    Migrate["migrate"] --> Postgres
+    Seed["seed-safe"] --> Postgres
+    Reindex["search-reindex"] --> Postgres
+    Reindex --> Meili
+```
+
+`migrate`, `seed-safe` và `search-reindex` là tác vụ chạy một lần theo thứ tự. PostgreSQL, RabbitMQ và Meilisearch dùng named volumes; Redis là cache. Chỉ cổng frontend và backend được mở ra máy host. Trang Next.js gọi API qua `backend:3001` khi render trên server; trình duyệt dùng `NEXT_PUBLIC_API_URL`.
+
+## Cấu hình cổng và URL
+
+Giá trị mặc định nằm trong [mẫu môi trường](.env.example). Nếu đổi `BACKEND_PORT`, đặt `NEXT_PUBLIC_API_URL` thành URL mà **trình duyệt** truy cập được, rồi chạy lại `docker compose up --build -d` để build frontend với URL mới. Nếu đổi `FRONTEND_PORT` hoặc tên host, cập nhật `CORS_ORIGINS` cho đúng origin giao diện.
+
+Các container chỉ dùng tên service nội bộ (`postgres`, `redis`, `rabbitmq`, `meilisearch`, `backend`), không dùng `localhost` để gọi nhau. File [backend/docker-compose.yml](backend/docker-compose.yml) vẫn hỗ trợ chạy riêng backend và sử dụng Compose project khác; dùng `compose.yaml` ở thư mục gốc khi muốn chạy toàn bộ hệ thống.
+
+Các URL `localhost:3001` trong hướng dẫn dịch vụ dùng cổng mặc định. Nếu `BACKEND_PORT` đã đổi, thay `3001` bằng cổng trong `.env` khi chạy các lệnh từ máy host.
+
+## Kiểm tra và vận hành
+
+```bash
+docker compose config --quiet
+docker compose ps --all
+curl -fsS http://localhost:3001/health
+curl -fsS http://localhost:3000/
+docker compose logs --tail=100 backend frontend
+```
+
+Trong `docker compose ps --all`, bốn dịch vụ dữ liệu, backend và frontend cần ở trạng thái `healthy`; ba tác vụ `migrate`, `seed-safe`, `search-reindex` cần kết thúc với mã 0. Lệnh thường dùng:
+
+```bash
+docker compose logs -f backend frontend
+docker compose restart backend frontend
+docker compose stop
+docker compose up --build -d
+```
+
+Để kiểm tra dữ liệu bền vững, ghi lại số sách trước và sau `docker compose stop` rồi `docker compose up --build -d`:
+
+```bash
+docker compose exec -T postgres psql -U bookstore -d bookstore -c 'SELECT COUNT(*) FROM "Book";'
+```
+
+Thay `bookstore` nếu đã đổi `POSTGRES_USER` hoặc `POSTGRES_DB`. `docker compose down` vẫn giữ named volumes; **không dùng `docker compose down -v` nếu muốn giữ dữ liệu**.
+
+## Xử lý lỗi thường gặp
+
+| Hiện tượng | Cách kiểm tra |
+| --- | --- |
+| Compose báo thiếu biến môi trường | Tạo `.env` ở thư mục gốc và điền đủ năm giá trị bắt buộc; chạy `docker compose config --quiet`. |
+| Cổng 3000/3001 đã được dùng | Đổi `FRONTEND_PORT`/`BACKEND_PORT` trong `.env`; cập nhật `NEXT_PUBLIC_API_URL` và `CORS_ORIGINS`, rồi build lại. |
+| Frontend hiện lỗi tải sách | Kiểm tra `docker compose ps --all`, `docker compose logs --tail=100 frontend backend`, `NEXT_PUBLIC_API_URL` và `curl -fsS http://localhost:3001/books`. |
+| Migration, seed hoặc reindex lỗi | Xem `docker compose logs migrate seed-safe search-reindex`; backend và frontend sẽ chờ các tác vụ hoàn thành. |
+| Sửa `.env` nhưng frontend vẫn gọi URL cũ | Chạy `docker compose up --build -d`; `NEXT_PUBLIC_API_URL` được đưa vào bundle lúc build. |
+| Đăng nhập tài khoản mẫu không được sau khi đổi mật khẩu seed | Seed không thay mật khẩu của user đã tồn tại; dùng mật khẩu đã tạo lần đầu hoặc tạo database phát triển mới. |
+
+## Hướng dẫn từng dịch vụ
+
+| Dịch vụ | Hướng dẫn |
+| --- | --- |
+| PostgreSQL | [Migration, dữ liệu mẫu và psql](backend/src/prisma/README.md) |
+| Redis | [Cache, TTL và key](backend/src/redis/README.md) |
+| RabbitMQ | [Sự kiện đơn hàng, outbox và DLQ](backend/src/infrastructure/rabbitmq/README.md) |
+| Meilisearch | [Tìm sách và reindex](backend/src/search/README.md) |
+| API | [Postman collection](backend/postman/Book-Selling-Backend.postman_collection.json), [quy ước response](backend/docs/API_RESPONSE.md) |
+
+## Phát triển và kiểm thử mã nguồn
+
+Docker Compose không yêu cầu cài Node.js trên máy host. Nếu sửa mã hoặc chạy test trực tiếp, dùng Node.js 22 và npm:
 
 ```bash
 cd backend
 npm ci
 npm run prisma:generate
-docker compose config --quiet
-docker compose up -d --build
-docker compose ps --all
-```
-
-Compose khởi động PostgreSQL, Redis, RabbitMQ, Meilisearch, chạy Prisma migration rồi mới khởi động API. Mặc định API ở `http://localhost:3001`, health check ở `/health`; có thể đổi cổng bằng `BACKEND_PORT`. Swagger UI ở `/api-docs`, OpenAPI JSON ở `/api-docs-json`. Xem [hướng dẫn Docker](backend/DOCKER.md) nếu cần xem log, kiểm tra trạng thái hoặc khôi phục chỉ mục tìm kiếm.
-
-Để chạy giao diện, sao chép `frontend/.env.example` thành `frontend/.env`, đặt `NEXT_PUBLIC_API_URL=http://localhost:3001`, rồi chạy:
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-Giao diện mặc định ở `http://localhost:3000`. Backend dùng `CORS_ORIGINS` (các origin cách nhau bằng dấu phẩy; mặc định `http://localhost:3000`).
-
-## Dữ liệu mẫu và migration
-
-Trên **database phát triển tách biệt**, đặt `SEED_DEFAULT_PASSWORD` và `SEED_SAMPLE_DATA=YES` trong `backend/.env`, rồi chạy từ `backend`:
-
-```bash
-docker compose --profile tools run --rm seed-safe
-```
-
-Seed an toàn chỉ thêm role, hai customer, một staff và một sách còn thiếu. Tài khoản mẫu là `customer-a@bookstore.example.com`, `customer-b@bookstore.example.com` và `staff@bookstore.example.com`; mật khẩu là giá trị bạn đặt trong `SEED_DEFAULT_PASSWORD`. Với PostgreSQL chạy riêng, đặt `DATABASE_URL` rồi dùng `npm run prisma:seed:safe`. Script cũ `npm run prisma:seed` **xóa và tạo lại dữ liệu** và yêu cầu `SEED_RESET_DATA=YES_I_UNDERSTAND`; chỉ dùng trên database thử nghiệm có thể bỏ dữ liệu.
-
-Migration mới nhất `20261020000000_book_search_sync` đã được chạy trên database audit cô lập, **chưa chạy trên database mặc định của người dùng**. Trước khi triển khai bản mới trên database đang có dữ liệu, sao lưu và xem các migration; Compose sẽ chạy `prisma migrate deploy` khi khởi động.
-
-## Kiểm thử
-
-```bash
-cd backend
 npm run lint
 npm run build
 npm test
-npx prisma validate
 
 cd ../frontend
+npm ci
 npm run build
 ```
 
-`npm run test:e2e` ghi dữ liệu nên chỉ chạy với database thử nghiệm riêng. Bộ test yêu cầu `E2E_ISOLATED_DB=YES` và `DATABASE_URL` của database đó; các ca khởi tạo ứng dụng còn cần `JWT_SECRET`, `RABBITMQ_URL`, `RABBITMQ_QUEUE` cùng biến kết nối Redis/Meilisearch trỏ đến dịch vụ thử nghiệm. Luồng mua hàng qua container cần thêm `E2E_BASE_URL` và `E2E_SAMPLE_PASSWORD` trùng mật khẩu seed. Thiếu cờ xác nhận hoặc URL database, test dừng trước khi ghi dữ liệu. Xem [phạm vi kiểm thử runtime](backend/docs/evidence/runtime-verification-20261019.md). CI trong [workflow](.github/workflows/backend-ci.yml) chạy backend lint/build/unit test và frontend build khi push hoặc mở PR; E2E chạy riêng trên môi trường audit.
-
-## API và vận hành
-
-API thành công trả `{ success, data, meta? }`; lỗi trả `{ success: false, error }`. Xem [quy ước response](backend/docs/API_RESPONSE.md) và [Postman collection](backend/postman/Book-Selling-Backend.postman_collection.json). Role, loại thông báo và các trạng thái nghiệp vụ được khai báo bằng enum trong [Prisma schema](backend/prisma/schema.prisma).
-
-Cache Redis có TTL 300 giây và được vô hiệu hóa sau thay đổi sách/giỏ. Đơn hàng dùng outbox PostgreSQL, consumer idempotency và dead-letter queue để xử lý lại lỗi RabbitMQ. Thay đổi sách qua API được ghi trong `BookSearchSync` để thử đồng bộ lại khi Meilisearch phục hồi. Nếu toàn bộ index bị mất hoặc sách được sửa ngoài API, chạy `docker compose --profile tools run --rm search-reindex` trong `backend` để tạo lại index từ sách đang bán; xem [hướng dẫn Docker](backend/DOCKER.md) trước khi chạy.
-
-## Trạng thái đối chiếu ngày 20/10/2026
-
-Mã ở SHA `bb7593c` trên nhánh `audit/rubric-completion-20261019` đã qua backend lint/build, **191/191 unit/API test**, **15/15 E2E** trên Compose/database cô lập, và frontend build qua TypeScript. Migration **10/10** chạy trên database audit. Các phép thử broker, cache, search gián đoạn và phục hồi cùng kết quả EXPLAIN được ghi trong [báo cáo đối chiếu](backend/docs/evidence/rubric-followup-20261020.md).
-
-Checklist hiện **23/23 tiêu chí đạt theo bằng chứng audit**, chưa phải điểm chính thức của giảng viên. [PR #12](https://github.com/Thuat3Tuoi/book_selling_system/pull/12) được một thành viên khác phê duyệt trên SHA chốt, CI qua và đã merge vào `main` ngày 20/10/2026. [Báo cáo Word cập nhật 20/10](backend/REPORT_CCNLTHD_NHOM_9_CAP_NHAT_20261020.docx) đã được sắp xếp theo cấu trúc báo cáo của học phần và phân biệt kết quả hiện tại với mốc lịch sử 16/10. Nhật ký 12 tuần, ảnh Insights, prompt AI nguyên văn và thông tin trang bìa vẫn cần nhóm bổ sung từ nguồn chính thức. Không có file nhận xét tuần 5 của nhóm 9 trong bộ tài liệu chuẩn; đây là đánh giá bản hiện tại, không gán trạng thái đã sửa góp ý cũ.
-
-## AI Disclosure
-
-Xem [AI Disclosure](backend/docs/AI_DISCLOSURE.md) về phạm vi AI hỗ trợ và cách xác minh. Nhóm cần tự review mã, migration và bằng chứng trước khi nộp hoặc triển khai.
+`npm run test:e2e` ghi dữ liệu và cần database thử nghiệm tách biệt cùng `E2E_ISOLATED_DB=YES`; xem [phạm vi kiểm thử](backend/docs/evidence/runtime-verification-20261019.md). [AI Disclosure](backend/docs/AI_DISCLOSURE.md) ghi phạm vi AI hỗ trợ.

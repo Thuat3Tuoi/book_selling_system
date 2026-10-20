@@ -93,9 +93,9 @@ services:
     profiles: [tools]
     build:
       context: .
-      target: migrate
+      target: runtime
     restart: "no"
-    command: ["npm", "run", "search:reindex"]
+    command: ["node", "dist/search/reindex.script.js"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
       MEILISEARCH_HOST: http://meilisearch:7700

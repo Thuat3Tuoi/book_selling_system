@@ -26,6 +26,7 @@ export class UserService {
                 passwordHash: passwordHash,
                 phoneNumber: data?.phoneNumber,
                 address: data?.address,
+                role: { connect: { roleName: "CUSTOMER" } },
             },
         });
         return {

@@ -61,10 +61,11 @@ Ngừng bán sách
 
 GET /search/books
     → Backend truy vấn index books
+    → Đối chiếu ID kết quả với sách ACTIVE trong PostgreSQL
     → Trả kết quả cho client
 ```
 
-Meilisearch xử lý ghi bằng tác vụ bất đồng bộ. Consumer chờ tác vụ hoàn tất trước khi ACK. Nếu đồng bộ lỗi liên tiếp ba lần, message được chuyển sang queue `.dead`; tác vụ đối soát lúc khởi động và mỗi 15 phút bổ sung sách còn thiếu, cập nhật sách thay đổi và loại bỏ document cũ. Vì vậy tìm kiếm có thể chậm hơn PostgreSQL một khoảng thời gian.
+Meilisearch xử lý ghi bằng tác vụ bất đồng bộ. Consumer chờ tác vụ hoàn tất trước khi ACK. Nếu đồng bộ lỗi liên tiếp ba lần, message được chuyển sang queue `.dead`; tác vụ đối soát lúc khởi động và mỗi 15 phút bổ sung sách còn thiếu, cập nhật sách thay đổi và loại bỏ document cũ. Vì vậy tìm kiếm có thể chậm hơn PostgreSQL một khoảng thời gian. Kết quả từ index được kiểm tra trạng thái với PostgreSQL trước khi trả, nên sách vừa chuyển sang `INACTIVE` không còn xuất hiện trong `hits` dù index chưa xóa xong.
 
 ## 2. Bước 1: Khởi chạy hệ thống
 
@@ -213,7 +214,7 @@ Khi index đã có sách phù hợp, phản hồi có dạng (dữ liệu minh h
 ```
 
 - `hits`: danh sách sách tìm được.
-- `totalHits`: số lượng kết quả ước tính do Meilisearch trả về.
+- `totalHits`: số lượng kết quả ước tính do Meilisearch trả về. Trong lúc đồng bộ trễ, con số này có thể bao gồm sách vừa ngừng bán, dù `hits` đã loại sách đó; một trang có thể chứa ít hơn `limit` kết quả.
 - `processingTimeMs`: thời gian xử lý tìm kiếm, tính bằng mili giây.
 
 Database mới có thể trả `"hits": []` và `"totalHits": 0`. Đây là kết quả hợp lệ khi chưa có sách hoặc dữ liệu chưa được lập chỉ mục.

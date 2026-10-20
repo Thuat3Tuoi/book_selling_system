@@ -46,7 +46,7 @@ describe("Auth (e2e)", () => {
                 passwordHash: passwordHash,
                 firstName: "Test",
                 lastName: "Login",
-                roleId: 2,
+                role: { connect: { roleName: "CUSTOMER" } },
             },
         });
     });
@@ -83,13 +83,13 @@ describe("Auth (e2e)", () => {
                 });
         });
 
-        it("roleID mac dinh = 2 (CUSTOMER) khi tao user khong can truyen role", async () => {
+        it("assigns CUSTOMER by role name, independent of numeric ID", async () => {
             const createdUer = await prisma.user.findUnique({
                 where: { email: registerEmail },
             });
-
+            const customerRole = await prisma.role.findUnique({ where: { roleName: "CUSTOMER" } });
             expect(createdUer).not.toBeNull();
-            expect(createdUer?.roleId).toBe(2);
+            expect(createdUer?.roleId).toBe(customerRole?.id);
         })
 
         it("409 - email da ton tai", () => {
@@ -206,5 +206,18 @@ describe("Auth (e2e)", () => {
         })
     })
 
-
+    it("limits repeated failed logins from one client IP", async () => {
+        const attempt = () => request(app.getHttpServer())
+            .post("/auth/login")
+            .send({ email: "missing@example.com", password: "incorrect" });
+        const first = await attempt();
+        expect(first.status).toBe(401);
+        let limited = false;
+        for (let i = 0; i < 20; i++) {
+            const response = await attempt();
+            if (response.status === 429) { limited = true; break; }
+            expect(response.status).toBe(401);
+        }
+        expect(limited).toBe(true);
+    });
 })

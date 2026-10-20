@@ -4,10 +4,13 @@ import { AddToCartDto } from "./dtos/cart-add-request.dto.js";
 import { UpdateCartItemDto } from "./dtos/cart-update-request.dto.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
 import { CartItemResponseDto, CartResponseDto } from "./dtos/cart-response.dto.js";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 
 
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
+@ApiTags("Carts")
 @Controller("carts")
 export class CartsController {
     constructor(private readonly cartsService: CartsService) {}

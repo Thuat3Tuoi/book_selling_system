@@ -20,8 +20,9 @@ export class CronJobService {
     async sendNotification() {
         const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
         try {
-            await this.redis.withLock(`cron:low-stock:${date}`, 3600, async () => {
+            await this.redis.withLock(`cron:low-stock:${date}`, 3600, async (signal) => {
                 const books = await this.bookService.getLowStockBook();
+                signal.throwIfAborted();
                 if (books.length === 0) {
                     this.logger.log("No low stock books");
                     return;
@@ -31,6 +32,7 @@ export class CronJobService {
                     select: { id: true },
                 });
                 for (const recipient of recipients) {
+                    signal.throwIfAborted();
                     await this.notificationsService.createNotificationOnce(`low-stock:${date}:${recipient.id}`, {
                         notifyType: "INFO",
                         userId: recipient.id,

@@ -4,9 +4,12 @@ import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
 import { RolesGuard } from "../guards/roles.guard.js";
 import { Roles } from "../guards/roles.decorator.js";
 import { OrderItemResponseDto } from "./dtos/order-item-response.dto.js";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN", "STAFF")
+@ApiBearerAuth()
+@ApiTags("Order items")
 @Controller("order-items")
 export class OrderItemsController {
     constructor(private orderItemsService: OrderItemsService) {}

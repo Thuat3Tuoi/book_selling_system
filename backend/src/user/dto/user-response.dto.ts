@@ -1,3 +1,5 @@
+import { ApiProperty } from "@nestjs/swagger";
+
 type PublicUserFields = {
     id: number;
     firstName: string;
@@ -9,12 +11,19 @@ type PublicUserFields = {
 };
 
 export class UserResponseDto {
+    @ApiProperty()
     readonly id: number;
+    @ApiProperty()
     readonly firstName: string;
+    @ApiProperty()
     readonly lastName: string;
+    @ApiProperty({ format: "email" })
     readonly email: string;
+    @ApiProperty({ type: String, nullable: true })
     readonly phone: string | null;
+    @ApiProperty({ type: String, nullable: true })
     readonly address: string | null;
+    @ApiProperty()
     readonly roleId: number;
 
     constructor(user: PublicUserFields) {

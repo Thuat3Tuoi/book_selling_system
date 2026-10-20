@@ -10,7 +10,7 @@ describe("CronJobService", () => {
     const createNotificationOnce = vi.fn();
     const getLowStockBook = vi.fn();
     const findMany = vi.fn();
-    const withLock = vi.fn(async (_key: string, _ttl: number, task: () => Promise<void>) => { await task(); return true; });
+    const withLock = vi.fn(async (_key: string, _ttl: number, task: (signal: AbortSignal) => Promise<void>) => { await task(new AbortController().signal); return true; });
 
     beforeEach(async () => {
         vi.clearAllMocks();

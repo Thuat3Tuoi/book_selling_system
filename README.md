@@ -1,3 +1,57 @@
+# Chạy và kiểm chứng backend
+
+Ứng dụng NestJS nằm trong `backend/`; giao diện nằm trong `frontend/`. Cần Docker Desktop/Engine với Compose v2 để chạy demo, hoặc Node.js 22 và npm để chạy backend trực tiếp. Làm việc trên nhánh tính năng/sửa lỗi.
+
+## Demo bằng một lệnh
+
+Trong `backend/`, sao chép `.env.example` thành `.env`, rồi điền các giá trị còn trống `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, `MEILISEARCH_API_KEY`, `JWT_SECRET`, `SEED_DEFAULT_PASSWORD` bằng giá trị ngẫu nhiên riêng cho máy thử. `JWT_SECRET` cần ít nhất 32 ký tự. Mật khẩu PostgreSQL và RabbitMQ nên dùng ký tự an toàn trong URL (ví dụ chuỗi hex). Đặt `CORS_ORIGINS` thành danh sách origin frontend, ngăn bằng dấu phẩy; không dùng `*`. Giữ `DEMO_SEED_ENABLED=true` **chỉ trên môi trường demo**. Không commit `.env`.
+
+Giữ `NODE_ENV=development` cho Compose demo. Khi triển khai môi trường production, đặt `NODE_ENV=production` và `DEMO_SEED_ENABLED=false`; script seed chỉ cho phép tạo tài khoản demo khi `NODE_ENV=development` hoặc `test`. Không dùng file cấu hình demo để triển khai production.
+
+Trên PowerShell, dùng `Copy-Item .env.example .env` thay cho `cp`. Nếu chạy backend ngoài Compose, đặt thêm `DATABASE_URL`, `RABBITMQ_URL`, `RABBITMQ_QUEUE`, `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY`, `JWT_SECRET` và `CORS_ORIGINS` trong môi trường của tiến trình; chạy migration trước `npm run start:dev`.
+
+```bash
+cd backend
+cp .env.example .env
+# Điền các giá trị bí mật trong .env trước khi chạy.
+docker compose up --build -d
+docker compose ps --all
+```
+
+Compose chờ PostgreSQL, Redis, RabbitMQ, Meilisearch healthy, chạy migration, seed và khởi động backend theo thứ tự. Migration tạo vai trò chuẩn; seed tạo dữ liệu và tài khoản demo bằng upsert/create theo email, ISBN và khóa mẫu, có thể chạy lại mà không xóa bản ghi cũ. Đặt `DEMO_SEED_ENABLED=false` để bỏ qua seed. Script seed chỉ chạy với `NODE_ENV=development` hoặc `test`. Không chạy demo seed trên database thật hoặc dùng chung.
+
+Seed không đổi mật khẩu hoặc nội dung của tài khoản mẫu đã có; nếu dùng lại volume cũ, hãy đăng nhập bằng mật khẩu demo đã dùng ở lần seed đầu.
+
+| Dịch vụ | Địa chỉ từ máy host |
+| --- | --- |
+| API và health | `http://localhost:3001`, `/health` (đổi bằng `BACKEND_PORT`) |
+| Swagger UI và JSON | `http://localhost:3001/api/docs`, `/api/docs-json` |
+| PostgreSQL, Redis, RabbitMQ, Meilisearch | Chỉ trong mạng Compose; không mở cổng host |
+
+Demo seed tạo vai trò `ADMIN`, `STAFF`, `CUSTOMER`; tài khoản `admin@bookstore.example.com`, `staff@bookstore.example.com`, `minh.tran@example.com` (và ba khách hàng mẫu khác) dùng cùng **mật khẩu bạn tự đặt** trong `SEED_DEFAULT_PASSWORD`. Mật khẩu được hash bằng bcrypt, không hiển thị lại trong log. Dùng `/auth/login` để lấy access token rồi gọi `/books`, `/orders`, `/search/books?q=Clean`; Swagger liệt kê payload và mã phản hồi. Tạo/sửa sách cần `ADMIN` hoặc `STAFF`; đơn hàng và giỏ hàng kiểm tra người sở hữu. [Hướng dẫn Redis](backend/src/redis/README.md) và [tìm kiếm](backend/src/search/README.md) có các bước demo chi tiết.
+
+Xem trạng thái bằng `docker compose ps --all`, theo dõi log bằng `docker compose logs -f backend` hoặc xem lỗi khởi động bằng `docker compose logs --tail=100 migrate seed backend`. Nếu `migrate` lỗi, kiểm tra PostgreSQL healthy và `POSTGRES_PASSWORD`; nếu `seed` lỗi, kiểm tra cờ demo, `NODE_ENV` và `SEED_DEFAULT_PASSWORD`; nếu backend lỗi, kiểm tra các URL/khóa bắt buộc và `CORS_ORIGINS`. Sau khi sửa `.env`, chạy lại `docker compose up --build -d`.
+
+```bash
+docker compose down       # Dừng, giữ volume và dữ liệu
+docker compose up --build -d  # Khởi động lại; migration và seed có thể chạy lại an toàn
+docker compose down -v    # XÓA dữ liệu PostgreSQL, RabbitMQ, Meilisearch trong volume Compose
+```
+
+## Kiểm thử và CI
+
+Trong `backend/`, chạy `npm ci`, `npm run lint`, `npm run typecheck`, `npm run build`, `npm test`. Lệnh `npm run test:e2e` cần PostgreSQL **thử riêng** đã chạy `npx prisma migrate deploy` và `npm run prisma:seed` với `NODE_ENV=test`, `DEMO_SEED_ENABLED=true`, `SEED_DEFAULT_PASSWORD` tự tạo. Trên Windows, sau khi build, `.\scripts\verify-isolated.ps1` tạo các container tạm, chạy migration, seed hai lần, E2E và kiểm tra tích hợp Redis/RabbitMQ/Meilisearch; script không dùng volume Compose.
+
+[Backend CI](.github/workflows/backend-ci.yml) chạy khi push lên bất kỳ nhánh nào hoặc mở/cập nhật PR: cài theo lockfile, lint, typecheck, build, unit test, migration, seed và E2E trên dịch vụ thử. CI tự tạo thông tin xác thực dùng một lần; **không cần GitHub Secrets** cho workflow kiểm thử này. Không dùng database thật cho CI. Sau khi push, vào tab **Actions** của repository, chọn **Backend CI** và mở run tương ứng commit để xem từng bước build/test cùng log lỗi nếu run thất bại; có workflow trong Git chưa đồng nghĩa GitHub đã chạy thành công.
+
+## Bảo mật
+
+Backend kiểm tra cấu hình bắt buộc khi khởi động, giới hạn đăng nhập/đăng ký theo IP, giới hạn CORS theo origin, hash mật khẩu bằng bcrypt, dùng Prisma ORM và guard kiểm tra tài nguyên. Frontend dùng React JSX để escape nội dung văn bản; không có chỗ render HTML thô trong `frontend/src`. Đây là các biện pháp đã rà soát, không phải chứng nhận toàn bộ OWASP Top 10.
+
+`.env` gốc từng xuất hiện trong lịch sử Git. Sau khi bỏ theo dõi file này, vẫn phải thu hồi/thay mọi khóa và mật khẩu đã dùng từ lịch sử đó trước khi dùng lại; không dán giá trị cũ vào issue, PR hoặc log.
+
+---
+
 <div align="center">
 
 # 📚 BOOKSTORE BACKEND
@@ -8,7 +62,9 @@
 
 **[Tổng quan](#tong-quan) · [Công nghệ](#cong-nghe) · [Cài đặt](#cai-dat) · [Kiến trúc](#kien-truc) · [Nhóm thực hiện](#nhom-thuc-hien)**
 
-</div># Redis — Hướng dẫn sử dụng cache cho sách và giỏ hàng
+</div>
+
+# Redis — Hướng dẫn sử dụng cache cho sách và giỏ hàng
 
 Redis được sử dụng để **lưu tạm dữ liệu sách và giỏ hàng**, giúp backend phản hồi nhanh hơn và giảm số lần truy vấn PostgreSQL.
 
@@ -207,7 +263,7 @@ docker compose logs --tail=30 backend
 
 Hai route `GET /books` và `GET /carts` yêu cầu tài khoản đã có trong hệ thống.
 
-> **Chú ý:** Database mới sau migration chưa có tài khoản mẫu. Seed có thể tạo dữ liệu thử nhưng **xóa dữ liệu cũ**, vì vậy chỉ chạy seed ở database phát triển có thể xóa.
+> **Chú ý:** Demo seed chỉ chạy khi `DEMO_SEED_ENABLED=true` và `NODE_ENV` là `development` hoặc `test`; có thể chạy lại mà không xóa dữ liệu cũ. Chỉ seed trên môi trường phát triển/kiểm thử.
 
 **Bước A — Đăng nhập bằng `curl`**
 
@@ -450,116 +506,3 @@ README.md
 Cần thay cấu trúc minh họa bằng cây thư mục thực tế của repository.
 
 </details>
-
-<a id="cai-dat"></a>
-## 🚀 Cài đặt & chạy dự án
-
-### 1. Chuẩn bị môi trường
-
-- **Node.js và npm** tương thích với phiên bản NestJS của dự án.
-- **Git** để tải mã nguồn.
-- **Docker và Docker Compose** nếu chạy bằng container.
-
-### 2. Tải mã nguồn và cài dependencies
-
-```bash
-git clone <REPOSITORY_URL>
-cd <PROJECT_DIRECTORY>
-npm install
-```
-
-Thay hai giá trị trong dấu `<>` bằng URL và tên thư mục thực tế.
-
-### 3. Thiết lập biến môi trường
-
-Nếu repository cung cấp `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-Điền các biến môi trường theo cấu hình của mã nguồn (cổng ứng dụng, cơ sở dữ liệu và các dịch vụ được sử dụng). **Không commit `.env`, mật khẩu hoặc API key.**
-
-### 4. Khởi chạy
-
-Với các script NestJS thông dụng trong `package.json`:
-
-```bash
-# Chế độ phát triển
-npm run start:dev
-
-# Build và chạy bản production
-npm run build
-npm run start:prod
-```
-
-> Kiểm tra `package.json` và khởi động các dịch vụ phụ thuộc trước khi chạy. Cổng truy cập API cần được bổ sung theo cấu hình thực tế: `<API_BASE_URL>`.
-
-<details>
-<summary><strong>🐳 Chạy với Docker Compose (nếu đã cấu hình)</strong></summary>
-
-```bash
-# Khởi động
-docker compose up --build -d
-
-# Xem log
-docker compose logs -f
-
-# Dừng hệ thống
-docker compose down
-```
-
-Các lệnh chỉ áp dụng khi repository có `Dockerfile` và file Compose hợp lệ. Nếu đã cấu hình seed dữ liệu hoặc tài khoản thử nghiệm, bổ sung cách chạy và thông tin test tại đây.
-
-</details>
-
-<a id="nang-cao"></a>
-## ⚡ Hướng nghiên cứu & mở rộng
-
-| Hạng mục | Kỹ thuật | Ví dụ ứng dụng |
-| :-- | :-- | :-- |
-| Cache và tối ưu truy vấn | Redis, `EXPLAIN ANALYZE`, index tổ hợp | Cache danh sách sách được xem nhiều; phân tích truy vấn lọc sách. |
-| Xử lý nền và hàng đợi | RabbitMQ, tác vụ định kỳ | Đưa công việc gửi thông báo đơn hàng vào hàng đợi. |
-| Tìm kiếm nâng cao | Meilisearch | Tìm sách theo từ khóa. |
-
-*Các ví dụ trên chỉ mô tả cách có thể áp dụng công nghệ, không xác nhận rằng hệ thống đã triển khai chúng.*
-
-<a id="chat-luong"></a>
-## 🧪 Kiểm thử, CI/CD & bảo mật
-
-**Kiểm thử dự kiến:** unit test, kiểm thử API và/hoặc một luồng end-to-end.
-
-```bash
-npm run test
-npm run test:e2e
-```
-
-*Chỉ sử dụng những lệnh đã được khai báo trong `package.json`.*
-
-**CI/CD dự kiến:** GitHub Actions tự động chạy **build** và **test** sau mỗi lần push. Workflow được đặt trong `.github/workflows/` khi đã thiết lập.
-
-**Yêu cầu bảo mật:** quản lý bí mật bằng biến môi trường, hash mật khẩu nếu tự quản lý tài khoản, kiểm tra input, kiểm soát quyền truy cập, phòng chống SQL injection và XSS, cấu hình CORS phù hợp và nhận biết OWASP Top 10.
-
-**Tài liệu API:** bổ sung đường dẫn Swagger/tài liệu API tự động sau khi tích hợp: `<API_DOCS_URL>`.
-
-<a id="lam-viec-nhom"></a>
-## 🌿 Quy trình làm việc nhóm
-
-`Tạo nhánh` → `Phát triển & kiểm thử` → `Push` → `Pull Request` → `Review chéo` → `Merge`
-
-Không commit trực tiếp vào `main`; xử lý xung đột trước khi merge.
-
-<a id="ai-disclosure"></a>
-## 🤖 AI Disclosure
-
-AI có thể được sử dụng để hỗ trợ giải thích kiến thức, phân tích lỗi, gợi ý test, review code và biên soạn tài liệu. Nhóm cần **tự kiểm chứng kết quả** trước khi đưa vào dự án.
-
-> **Khai báo thực tế:** [Điền tên công cụ, công việc đã sử dụng AI và phương pháp kiểm chứng; xóa nội dung không áp dụng.]
-
-
-<a id="tai-lieu"></a>
-## 📖 Tài liệu tham khảo
-
-[NestJS](https://docs.nestjs.com/) · [TypeScript](https://www.typescriptlang.org/docs/) · [Node.js](https://nodejs.org/en/docs) · [PostgreSQL](https://www.postgresql.org/docs/) · [Redis](https://redis.io/docs/) · [RabbitMQ](https://www.rabbitmq.com/docs) · [Meilisearch](https://www.meilisearch.com/docs) · [Docker](https://docs.docker.com/) · [GitHub Actions](https://docs.github.com/en/actions)
-
----

@@ -6,7 +6,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 async function main() {
     const app = await NestFactory.createApplicationContext(AppModule);
     try {
-        const books = await app.get(PrismaService).book.findMany();
+        const books = await app.get(PrismaService).book.findMany({ where: { status: "ACTIVE" } });
         await app.get(SearchService).reindexAll(books);
     } finally {
         await app.close();

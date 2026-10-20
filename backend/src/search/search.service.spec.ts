@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SearchService } from './search.service.js';
 import type { Book } from '../generated/prisma/client.js';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 const mockIndex = {
   addDocuments: vi.fn().mockResolvedValue({ taskUid: 1 }),
@@ -45,10 +46,12 @@ const sampleBook: Book = {
 
 describe('SearchService', () => {
   let service: SearchService;
+  const findMany = vi.fn();
 
   beforeEach(async () => {
     vi.clearAllMocks();
     mockWaitForTask.mockResolvedValue({ status: "succeeded" });
+    findMany.mockResolvedValue([{ id: sampleBook.id }]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SearchService,
@@ -58,6 +61,7 @@ describe('SearchService', () => {
             get: vi.fn((key: string, defaultValue?: unknown) => defaultValue ?? "http://localhost:7700"),
           },
         },
+        { provide: PrismaService, useValue: { book: { findMany } } },
       ],
     }).compile();
 
@@ -114,6 +118,32 @@ describe('SearchService', () => {
     expect(result.page).toBe(2);
     expect(result.limit).toBe(10);
     expect(result.hits).toHaveLength(1);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { id: { in: [1] }, status: "ACTIVE" },
+      select: { id: true },
+    });
+  });
+
+  it("does not expose a book disabled before the search index catches up", async () => {
+    mockIndex.search.mockResolvedValueOnce({
+      hits: [service.toSearchDocument(sampleBook)],
+      estimatedTotalHits: 1,
+      processingTimeMs: 1,
+    });
+    findMany.mockResolvedValueOnce([]);
+
+    const result = await service.searchBooks("clean code");
+    expect(result.hits).toEqual([]);
+  });
+
+  it("reindex excludes disabled books and removes their old documents", async () => {
+    const disabledBook = { ...sampleBook, id: 2, status: "INACTIVE" };
+    mockIndex.getDocuments.mockResolvedValueOnce({ results: [{ id: 1 }, { id: 2 }] });
+
+    await service.reindexAll([sampleBook, disabledBook]);
+
+    expect(mockIndex.addDocuments).toHaveBeenCalledWith([service.toSearchDocument(sampleBook)]);
+    expect(mockIndex.deleteDocuments).toHaveBeenCalledWith([2]);
   });
 
   it("searchBooks() truyen filter dung khi co category", async () => {

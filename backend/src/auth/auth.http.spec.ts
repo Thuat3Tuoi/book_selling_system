@@ -6,6 +6,7 @@ import { AuthController } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
 import { LocalAuthGuard } from "../guards/local-auth.guard.js";
+import { ThrottlerModule } from "@nestjs/throttler";
 
 describe("Auth HTTP response and refresh validation", () => {
     let app: INestApplication;
@@ -13,6 +14,7 @@ describe("Auth HTTP response and refresh validation", () => {
 
     beforeAll(async () => {
         const module = await Test.createTestingModule({
+            imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }])],
             controllers: [AuthController],
             providers: [{ provide: AuthService, useValue: authService }],
         })

@@ -6,8 +6,11 @@ import { RolesGuard } from "../guards/roles.guard.js";
 import { Roles } from "../guards/roles.decorator.js";
 import type { AuthenticatedUser } from "../auth/authenticated-user.js";
 import { NotificationResponseDto } from "./dtos/notification-response.dto.js";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
+@ApiTags("Notifications")
 @Controller("notifications")
 export class NotificationsController {
     constructor(private notificationService: NotificationsService) {}

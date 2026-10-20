@@ -18,6 +18,13 @@ const date = (value: string) => new Date(value);
 const coverUrl = (isbn: string) => `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`;
 
 async function main() {
+    if (process.env.DEMO_SEED_ENABLED !== "true") {
+        console.log("Demo seed disabled");
+        return;
+    }
+    if (process.env.NODE_ENV !== "development" && process.env.NODE_ENV !== "test") {
+        throw new Error("Demo seed is allowed only in development or test");
+    }
     console.log("🌱 Bắt đầu tạo dữ liệu mẫu...");
     if (!DEFAULT_PASSWORD) {
         throw new Error("DEFAULT_PASSWORD khong ton tai trong moi truong");
@@ -27,35 +34,24 @@ async function main() {
 
     await prisma.$transaction(
         async (tx) => {
-            // Đây là seed cho môi trường phát triển: xóa dữ liệu cũ và reset ID để
-            // User.roleId mặc định là 2 luôn trỏ tới role CUSTOMER trong schema hiện tại.
-            await tx.$executeRaw`
-            TRUNCATE TABLE
-                "Notification",
-                "OrderItem",
-                "Order",
-                "CartItem",
-                "Cart",
-                "Session",
-                "Book",
-                "User",
-                "Role"
-            RESTART IDENTITY CASCADE
-        `;
-
-            const adminRole = await tx.role.create({
-                data: { roleName: "ADMIN", status: true },
+            // Use stable natural keys and create only missing demo records.
+            // Never reset IDs, passwords, stock, orders, or other existing data.
+            const adminRole = await tx.role.upsert({
+                where: { roleName: "ADMIN" }, update: {},
+                create: { roleName: "ADMIN", status: true },
             });
-            const customerRole = await tx.role.create({
-                data: { roleName: "CUSTOMER", status: true },
+            const customerRole = await tx.role.upsert({
+                where: { roleName: "CUSTOMER" }, update: {},
+                create: { roleName: "CUSTOMER", status: true },
             });
-            const staffRole = await tx.role.create({
-                data: { roleName: "STAFF", status: true },
+            const staffRole = await tx.role.upsert({
+                where: { roleName: "STAFF" }, update: {},
+                create: { roleName: "STAFF", status: true },
             });
 
             const users = await Promise.all([
-                tx.user.create({
-                    data: {
+                tx.user.upsert({
+                    where: { email: "admin@bookstore.example.com" }, update: {}, create: {
                         firstName: "An",
                         lastName: "Nguyễn",
                         email: "admin@bookstore.example.com",
@@ -67,8 +63,8 @@ async function main() {
                         createdAt: date("2026-01-05T01:00:00.000Z"),
                     },
                 }),
-                tx.user.create({
-                    data: {
+                tx.user.upsert({
+                    where: { email: "staff@bookstore.example.com" }, update: {}, create: {
                         firstName: "Linh",
                         lastName: "Phạm",
                         email: "staff@bookstore.example.com",
@@ -80,8 +76,8 @@ async function main() {
                         createdAt: date("2026-01-08T02:30:00.000Z"),
                     },
                 }),
-                tx.user.create({
-                    data: {
+                tx.user.upsert({
+                    where: { email: "minh.tran@example.com" }, update: {}, create: {
                         firstName: "Minh",
                         lastName: "Trần",
                         email: "minh.tran@example.com",
@@ -93,8 +89,8 @@ async function main() {
                         createdAt: date("2026-02-12T03:15:00.000Z"),
                     },
                 }),
-                tx.user.create({
-                    data: {
+                tx.user.upsert({
+                    where: { email: "thao.le@example.com" }, update: {}, create: {
                         firstName: "Thảo",
                         lastName: "Lê",
                         email: "thao.le@example.com",
@@ -106,8 +102,8 @@ async function main() {
                         createdAt: date("2026-03-20T08:45:00.000Z"),
                     },
                 }),
-                tx.user.create({
-                    data: {
+                tx.user.upsert({
+                    where: { email: "hoang.vo@example.com" }, update: {}, create: {
                         firstName: "Hoàng",
                         lastName: "Võ",
                         email: "hoang.vo@example.com",
@@ -119,8 +115,8 @@ async function main() {
                         createdAt: date("2026-04-18T06:20:00.000Z"),
                     },
                 }),
-                tx.user.create({
-                    data: {
+                tx.user.upsert({
+                    where: { email: "mai.do@example.com" }, update: {}, create: {
                         firstName: "Mai",
                         lastName: "Đỗ",
                         email: "mai.do@example.com",
@@ -242,8 +238,8 @@ async function main() {
             const books = [];
             for (const [index, book] of bookData.entries()) {
                 books.push(
-                    await tx.book.create({
-                        data: {
+                    await tx.book.upsert({
+                        where: { isbn: book.isbn }, update: {}, create: {
                             ...book,
                             price: money(book.price),
                             coverImageUrl: coverUrl(book.isbn),
@@ -274,19 +270,25 @@ async function main() {
                     "thao.le@example.com",
                     "hoang.vo@example.com",
                     "mai.do@example.com",
-                ].map((email) => tx.cart.create({ data: { userId: getUser(email).id } }))
+                ].map((email) => tx.cart.upsert({
+                    where: { userId: getUser(email).id }, update: {},
+                    create: { userId: getUser(email).id },
+                }))
             );
 
-            await tx.cartItem.createMany({
-                data: [
+            for (const item of [
                     { cartId: carts[0].id, bookId: getBook("9780735211292").id, quantity: 1 },
                     { cartId: carts[0].id, bookId: getBook("9780156012195").id, quantity: 2 },
                     { cartId: carts[1].id, bookId: getBook("9780132350884").id, quantity: 1 },
                     { cartId: carts[2].id, bookId: getBook("9780062316097").id, quantity: 1 },
                     { cartId: carts[2].id, bookId: getBook("9780143130727").id, quantity: 1 },
                     { cartId: carts[3].id, bookId: getBook("9780375704024").id, quantity: 1 },
-                ],
-            });
+                ]) {
+                await tx.cartItem.upsert({
+                    where: { cartId_bookId: { cartId: item.cartId, bookId: item.bookId } },
+                    update: {}, create: item,
+                });
+            }
 
             const orderData = [
                 {
@@ -343,6 +345,16 @@ async function main() {
 
             const orders = [];
             for (const orderSeed of orderData) {
+                const existingOrder = await tx.order.findFirst({
+                    where: {
+                        userId: getUser(orderSeed.userEmail).id,
+                        createdAt: date(orderSeed.createdAt),
+                    },
+                });
+                if (existingOrder) {
+                    orders.push(existingOrder);
+                    continue;
+                }
                 const items = orderSeed.items.map((item) => {
                     const book = getBook(item.isbn);
                     return {
@@ -373,8 +385,7 @@ async function main() {
                 orders.push(order);
             }
 
-            await tx.notification.createMany({
-                data: [
+            for (const notification of [
                     {
                         notifyType: "ORDER_COMPLETED",
                         userId: getUser("minh.tran@example.com").id,
@@ -418,8 +429,13 @@ async function main() {
                         status: false,
                         createdAt: date("2026-03-20T08:46:00.000Z"),
                     },
-                ],
-            });
+                ]) {
+                const eventKey = `demo:${notification.notifyType}:${notification.createdAt.toISOString()}`;
+                await tx.notification.upsert({
+                    where: { eventKey }, update: {},
+                    create: { ...notification, eventKey },
+                });
+            }
         },
         { maxWait: 10_000, timeout: 30_000 }
     );
@@ -432,7 +448,10 @@ async function main() {
 
 main()
     .catch((error: unknown) => {
-        console.error("❌ Tạo dữ liệu mẫu thất bại:", error);
+        const reason = error instanceof Error && error.message === "Demo seed is allowed only in development or test"
+            ? error.message
+            : "check demo configuration and database readiness; details suppressed";
+        console.error("Demo seed failed:", reason);
         process.exitCode = 1;
     })
     .finally(async () => {

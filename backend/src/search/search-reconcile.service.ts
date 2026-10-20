@@ -21,9 +21,10 @@ export class SearchReconcileService implements OnApplicationBootstrap {
     @Cron("0 */15 * * * *", { waitForCompletion: true })
     async reconcile(): Promise<void> {
         try {
-            await this.redis.withLock("search:reindex", 900, async () => {
+            await this.redis.withLock("search:reindex", 900, async (signal) => {
                 const books = await this.prisma.book.findMany({ where: { status: "ACTIVE" } });
-                await this.search.reindexAll(books);
+                signal.throwIfAborted();
+                await this.search.reindexAll(books, signal);
                 this.logger.log(`Reconciled ${books.length} active books with Meilisearch`);
             });
         } catch (error) {

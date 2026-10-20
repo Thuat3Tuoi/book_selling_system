@@ -22,22 +22,36 @@ import { RefreshTokenDto } from "./dto/refresh-token.dto.js";
 import type { AuthenticatedUser } from "./authenticated-user.js";
 import { UserResponseDto } from "../user/dto/user-response.dto.js";
 import { refreshCookieOptions } from "./refresh-cookie-options.js";
+import { ThrottlerGuard } from "@nestjs/throttler";
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiEnvelopeResponse } from "../common/api-envelope.decorator.js";
+import { AccessTokenResponseDto, LoginResponseDto } from "./dto/auth-response.dto.js";
+@ApiTags("Auth")
 @Controller("auth")
 export class AuthController {
     constructor(private readonly authService: AuthService) {}
     @Post("register")
+    @UseGuards(ThrottlerGuard)
+    @ApiOperation({ summary: "Create a customer account" })
+    @ApiResponse({ status: 201, description: "Account created" })
     register(@Body() dto: CreateUserDto) {
         return this.authService.register(dto);
     }
 
-    @UseGuards(LocalAuthGuard)
+    @UseGuards(ThrottlerGuard, LocalAuthGuard)
     @Post("login")
     @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: "Log in; returns access token and sets refresh cookie" })
+    @ApiBody({ type: LoginDto })
+    @ApiEnvelopeResponse(200, LoginResponseDto)
+    @ApiResponse({ status: 429, description: "Too many attempts from this client IP" })
     login(@Body() _dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
         return this.authService.login(req.user, res);
     }
 
     @Post("refresh-token")
+    @ApiOperation({ summary: "Refresh access token using body or refresh cookie" })
+    @ApiEnvelopeResponse(201, AccessTokenResponseDto)
     async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request) {
         const refreshToken = dto.refreshToken ?? req.cookies?.refreshToken;
         if (!refreshToken) {
@@ -47,7 +61,9 @@ export class AuthController {
     }
 
     @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
     @Get("profile")
+    @ApiEnvelopeResponse(200, UserResponseDto)
     getProfile(@Req() req: Request & { user: AuthenticatedUser }) {
         return new UserResponseDto(req.user);
     }

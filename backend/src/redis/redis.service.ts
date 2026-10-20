@@ -160,7 +160,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }, 1000);
     }
 
-    async withLock(key: string, ttlSeconds: number, task: () => Promise<void>): Promise<boolean> {
+    async withLock(key: string, ttlSeconds: number, task: (signal: AbortSignal) => Promise<void>): Promise<boolean> {
         const token = randomUUID();
         try {
             const acquired = await this.redis.set(key, token, "EX", ttlSeconds, "NX");
@@ -169,9 +169,31 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
             this.logger.warn(`Lock unavailable (${key}): ${(error as Error).message}`);
             return false;
         }
+        const controller = new AbortController();
+        let stopped = false;
+        let renewalTimer: NodeJS.Timeout | undefined;
+        const renew = async () => {
+            if (stopped) return;
+            try {
+                const renewed = await this.redis.eval(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end",
+                    1, key, token, ttlSeconds,
+                );
+                if (renewed !== 1) throw new Error("lock ownership lost");
+            } catch (error) {
+                controller.abort();
+                this.logger.error(`Lock renewal failed (${key}): ${(error as Error).message}`);
+                return;
+            }
+            if (!stopped) renewalTimer = setTimeout(() => void renew(), Math.max(100, ttlSeconds * 250));
+        };
+        renewalTimer = setTimeout(() => void renew(), Math.max(100, ttlSeconds * 250));
         try {
-            await task();
+            await task(controller.signal);
+            controller.signal.throwIfAborted();
         } finally {
+            stopped = true;
+            if (renewalTimer) clearTimeout(renewalTimer);
             await this.redis.eval(
                 "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
                 1, key, token,

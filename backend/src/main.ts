@@ -4,6 +4,8 @@ import { Transport, type MicroserviceOptions } from "@nestjs/microservices";
 import { ConfigService } from "@nestjs/config";
 import { ValidationPipe } from "@nestjs/common";
 import cookieParser from "cookie-parser";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { allowedOrigins } from "./config/environment.js";
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
@@ -41,9 +43,16 @@ async function bootstrap() {
     app.use(cookieParser());
 
     app.enableCors({
-        origin: "http://localhost:3000",
+        origin: allowedOrigins(configService.get<string>("CORS_ORIGINS"), configService.get<string>("NODE_ENV")),
         credentials: true,
     });
+    const document = SwaggerModule.createDocument(app, new DocumentBuilder()
+        .setTitle("Book Selling API")
+        .setDescription("Responses use { success: true, data, meta? }; errors use { success: false, error }.")
+        .setVersion("1.0")
+        .addBearerAuth()
+        .build());
+    SwaggerModule.setup("api/docs", app, document);
     await app.listen(process.env.PORT ?? 3001);
 }
 await bootstrap();

@@ -4,12 +4,15 @@ import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
 import { UserResponseDto } from "./dto/user-response.dto.js";
 import type { Request } from "express";
 import type { AuthenticatedUser } from "../auth/authenticated-user.js";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
+@ApiTags("User")
 @Controller("user")
 export class UserController {
     constructor(private readonly userService: UserService) {}
 
     @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
     @Get("me")
     async getMe(@Req() req: Request & { user: AuthenticatedUser }) {
         const user = await this.userService.findUserById(req.user.id);

@@ -2,6 +2,7 @@ import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config';
 import { Meilisearch, type Index } from "meilisearch";
 import type { Book } from '../generated/prisma/client.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 const BOOKS_INDEX = "books";
 
@@ -37,7 +38,10 @@ export class SearchService {
     private readonly client: Meilisearch;
     private index: Index<BookSearchDocument>;
 
-    constructor(private readonly configService: ConfigService) {
+    constructor(
+        private readonly configService: ConfigService,
+        private readonly prisma: PrismaService,
+    ) {
         const host =
             this.configService?.get<string>("MEILISEARCH_HOST") ||
             process.env.MEILISEARCH_HOST ||
@@ -144,8 +148,17 @@ export class SearchService {
             throw new ServiceUnavailableException("Search is temporarily unavailable");
         }
 
+        // Meilisearch is eventually consistent. Check the source of truth before
+        // exposing a hit so a recently disabled book cannot remain public.
+        const ids = result.hits.map((hit) => hit.id);
+        const activeBooks = ids.length === 0 ? [] : await this.prisma.book.findMany({
+            where: { id: { in: ids }, status: "ACTIVE" },
+            select: { id: true },
+        });
+        const activeIds = new Set(activeBooks.map((book) => book.id));
+
         return {
-            hits: result.hits,
+            hits: result.hits.filter((hit) => activeIds.has(hit.id)),
             totalHits: result.estimatedTotalHits ?? result.hits.length,
             processingTimeMs: result.processingTimeMs,
             page,
@@ -153,11 +166,13 @@ export class SearchService {
         };
     }
 
-    async reindexAll(books: Book[]): Promise<void> {
-        const activeIds = new Set(books.map((book) => book.id));
+    async reindexAll(books: Book[], signal?: AbortSignal): Promise<void> {
+        const activeBooks = books.filter((book) => book.status === "ACTIVE");
+        const activeIds = new Set(activeBooks.map((book) => book.id));
         const BATCH = 1000;
-        for (let i = 0; i < books.length; i += BATCH) {
-            const docs = books.slice(i, i + BATCH).map((b) => this.toSearchDocument(b));
+        for (let i = 0; i < activeBooks.length; i += BATCH) {
+            signal?.throwIfAborted();
+            const docs = activeBooks.slice(i, i + BATCH).map((b) => this.toSearchDocument(b));
             const task = await this.index.addDocuments(docs);
             await this.waitForTask(task.taskUid);
             this.logger.log(`Batch ${i / BATCH + 1}: taskUid=${task.taskUid}`);
@@ -166,12 +181,14 @@ export class SearchService {
         let offset = 0;
         const staleIds: number[] = [];
         while (true) {
+            signal?.throwIfAborted();
             const page = await this.index.getDocuments({ fields: ["id"], limit: BATCH, offset });
             staleIds.push(...page.results.filter((doc) => !activeIds.has(doc.id)).map((doc) => doc.id));
             if (page.results.length < BATCH) break;
             offset += BATCH;
         }
         for (let i = 0; i < staleIds.length; i += BATCH) {
+            signal?.throwIfAborted();
             await this.waitForTask((await this.index.deleteDocuments(staleIds.slice(i, i + BATCH))).taskUid);
         }
     }

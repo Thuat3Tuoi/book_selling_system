@@ -1,7 +1,5 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
-import { AppController } from "./app.controller.js";
-import { AppService } from "./app.service.js";
 import { NotificationsModule } from "./notifications/notifications.module.js";
 import { OrdersModule } from "./orders/orders.module.js";
 import { AuthModule } from "./auth/auth.module.js";
@@ -21,10 +19,13 @@ import { RedisModule } from "./redis/redis.module.js";
 import { HealthController } from "./health.controller.js";
 import { RabbitmqModule } from "./infrastructure/rabbitmq/rabbitmq.module.js";
 import { SearchReconcileService } from "./search/search-reconcile.service.js";
+import { validateEnvironment } from "./config/environment.js";
+import { ThrottlerModule } from "@nestjs/throttler";
 
 @Module({
     imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
+        ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
+        ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
         PrismaModule,
         OrdersModule,
         NotificationsModule,
@@ -39,9 +40,8 @@ import { SearchReconcileService } from "./search/search-reconcile.service.js";
         RedisModule,
         RabbitmqModule,
     ],
-    controllers: [AppController, HealthController],
+    controllers: [HealthController],
     providers: [
-        AppService,
         SearchReconcileService,
         { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
         { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },

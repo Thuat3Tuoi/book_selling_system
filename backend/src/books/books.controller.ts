@@ -2,46 +2,61 @@ import { Controller, Post, Body, Get, Param, ParseIntPipe, Patch, Delete, UseGua
 import { BooksService } from "./books.service.js";
 import { CreateBookDto } from "./dtos/book-create-request.dto.js";
 import { UpdateBookDto } from "./dtos/book-update-request.dto.js";
-import { BooksQueryDto } from "./dtos/books-query.dto.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
-import { StaffAuthGuard } from "../guards/staff-auth.guard.js";
-import { ApiBearerAuth, ApiForbiddenResponse } from "@nestjs/swagger";
+import { RolesGuard } from "../guards/roles.guard.js";
+import { Roles } from "../guards/roles.decorator.js";
+import { BooksQueryDto } from "./dtos/books-query.dto.js";
+import { BookResponseDto } from "./dtos/book-response.dto.js";
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
+import { ApiEnvelopeResponse } from "../common/api-envelope.decorator.js";
 
+@ApiTags("Books")
 @Controller("books")
 export class BooksController {
     constructor(private readonly booksService: BooksService) {}
 
     @Post()
-    @UseGuards(JwtAuthGuard, StaffAuthGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("ADMIN", "STAFF")
     @ApiBearerAuth()
-    @ApiForbiddenResponse({ description: "Requires ADMIN or STAFF" })
-    createBook(@Body() createBookDto: CreateBookDto) {
-        return this.booksService.createBook(createBookDto);
+    @ApiOperation({ summary: "Create a book (ADMIN or STAFF)" })
+    @ApiEnvelopeResponse(201, BookResponseDto)
+    async createBook(@Body() createBookDto: CreateBookDto) {
+        return new BookResponseDto(await this.booksService.createBook(createBookDto));
     }
 
     @Get()
-    getBooks(@Query() query: BooksQueryDto) {
-        return this.booksService.getBooks(query.page, query.limit);
+    @ApiOperation({ summary: "List active books with pagination" })
+    @ApiEnvelopeResponse(200, BookResponseDto, { paginated: true })
+    async getBooks(@Query() query: BooksQueryDto) {
+        const page = await this.booksService.getBooks(query.page ?? 1, query.limit ?? 10);
+        return { data: page.data.map((book) => new BookResponseDto(book)), meta: page.meta };
     }
 
     @Get(":id")
-    getBookById(@Param("id", ParseIntPipe) id: number) {
-        return this.booksService.getBookById(id);
+    @ApiParam({ name: "id", type: Number })
+    @ApiEnvelopeResponse(200, BookResponseDto)
+    async getBookById(@Param("id", ParseIntPipe) id: number) {
+        return new BookResponseDto(await this.booksService.getBookById(id));
     }
 
     @Patch(":id")
-    @UseGuards(JwtAuthGuard, StaffAuthGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("ADMIN", "STAFF")
     @ApiBearerAuth()
-    @ApiForbiddenResponse({ description: "Requires ADMIN or STAFF" })
-    updateBook(@Param("id", ParseIntPipe) id: number, @Body() updateBookDto: UpdateBookDto) {
-        return this.booksService.updateBook(id, updateBookDto);
+    @ApiParam({ name: "id", type: Number })
+    @ApiEnvelopeResponse(200, BookResponseDto)
+    async updateBook(@Param("id", ParseIntPipe) id: number, @Body() updateBookDto: UpdateBookDto) {
+        return new BookResponseDto(await this.booksService.updateBook(id, updateBookDto));
     }
 
     @Delete(":id")
-    @UseGuards(JwtAuthGuard, StaffAuthGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("ADMIN", "STAFF")
     @ApiBearerAuth()
-    @ApiForbiddenResponse({ description: "Requires ADMIN or STAFF" })
-    deleteBook(@Param("id", ParseIntPipe) id: number) {
-        return this.booksService.deleteBook(id);
+    @ApiParam({ name: "id", type: Number })
+    @ApiEnvelopeResponse(200, BookResponseDto)
+    async deleteBook(@Param("id", ParseIntPipe) id: number) {
+        return new BookResponseDto(await this.booksService.deleteBook(id));
     }
 }

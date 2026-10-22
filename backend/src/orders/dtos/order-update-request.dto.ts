@@ -1,5 +1,10 @@
-import { IsString, MinLength } from "class-validator";
+import { IsNotEmpty, IsString, MinLength } from "class-validator";
+import { ApiProperty } from "@nestjs/swagger";
+
 export class OrderUpdateRequest {
-    @IsString() @MinLength(10)
+    @IsString()
+    @IsNotEmpty()
+    @MinLength(10)
+    @ApiProperty({ minLength: 10 })
     shippingAddress!: string;
 }

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { ClientsModule, Transport } from "@nestjs/microservices";
+import { OutboxPublisherService } from "./outbox-publisher.service.js";
 
 @Module({
     imports: [
@@ -14,13 +15,9 @@ import { ClientsModule, Transport } from "@nestjs/microservices";
                     transport: Transport.RMQ,
                     options: {
                         urls: [configService.getOrThrow<string>("RABBITMQ_URL")],
-                        queue: `${configService.getOrThrow<string>("RABBITMQ_QUEUE")}.outbox-v1`,
+                        queue: configService.getOrThrow<string>("RABBITMQ_QUEUE"),
                         queueOptions: {
                             durable: configService.get<string>("RABBITMQ_DURABLE") === "true",
-                            arguments: {
-                                "x-dead-letter-exchange": "",
-                                "x-dead-letter-routing-key": `${configService.getOrThrow<string>("RABBITMQ_QUEUE")}.outbox-v1.dlq`,
-                            },
                         },
                         persistent: configService.get<string>("RABBITMQ_PERSISTENT") === "true",
                     },
@@ -28,6 +25,7 @@ import { ClientsModule, Transport } from "@nestjs/microservices";
             },
         ]),
     ],
+    providers: [OutboxPublisherService],
     exports: [ClientsModule],
 })
 export class RabbitmqModule {}

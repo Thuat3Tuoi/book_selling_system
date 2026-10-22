@@ -28,10 +28,11 @@ describe("CartsService", () => {
             delete: vi.fn(),
         },
     };
-    const redis = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
+    const redis = { get: vi.fn(), set: vi.fn(), getRevision: vi.fn(), incrementRevision: vi.fn() };
 
     beforeEach(async () => {
         vi.resetAllMocks();
+        redis.getRevision.mockResolvedValue(0);
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -52,16 +53,16 @@ describe("CartsService", () => {
             );
             await service.getCartById(7);
             await service.getCartById(8);
-            expect(redis.get).toHaveBeenNthCalledWith(1, "cart:user:7");
-            expect(redis.get).toHaveBeenNthCalledWith(2, "cart:user:8");
-            expect(redis.set).toHaveBeenCalledWith("cart:user:7", expect.objectContaining({ userId: 7 }), 300);
-            expect(redis.set).toHaveBeenCalledWith("cart:user:8", expect.objectContaining({ userId: 8 }), 300);
+            expect(redis.get).toHaveBeenNthCalledWith(1, "cart:user:7:rev:0:catalog:0");
+            expect(redis.get).toHaveBeenNthCalledWith(2, "cart:user:8:rev:0:catalog:0");
+            expect(redis.set).toHaveBeenCalledWith("cart:user:7:rev:0:catalog:0", expect.objectContaining({ userId: 7 }), 300);
+            expect(redis.set).toHaveBeenCalledWith("cart:user:8:rev:0:catalog:0", expect.objectContaining({ userId: 8 }), 300);
         });
         it("cache hit: trả giỏ từ Redis, không truy vấn DB", async () => {
             redis.get.mockResolvedValue(cart);
 
             await expect(service.getCartById(USER_ID)).resolves.toBe(cart);
-            expect(redis.get).toHaveBeenCalledWith(`cart:user:${USER_ID}`);
+            expect(redis.get).toHaveBeenCalledWith(`cart:user:${USER_ID}:rev:0:catalog:0`);
             expect(prisma.cart.findUnique).not.toHaveBeenCalled();
         });
 
@@ -70,7 +71,7 @@ describe("CartsService", () => {
             prisma.cart.findUnique.mockResolvedValue(cart);
 
             await expect(service.getCartById(USER_ID)).resolves.toBe(cart);
-            expect(redis.set).toHaveBeenCalledWith(`cart:user:${USER_ID}`, cart, 300);
+            expect(redis.set).toHaveBeenCalledWith(`cart:user:${USER_ID}:rev:0:catalog:0`, cart, 300);
         });
 
         it("tự tạo giỏ mới khi người dùng chưa có giỏ", async () => {
@@ -137,7 +138,7 @@ describe("CartsService", () => {
             expect(prisma.cartItem.create).toHaveBeenCalledWith({
                 data: { cartId: cart.id, bookId: 1, quantity: 2 },
             });
-            expect(redis.delete).toHaveBeenCalledWith(`cart:user:${USER_ID}`);
+            expect(redis.incrementRevision).toHaveBeenCalledWith(`cart:user:${USER_ID}:revision`);
         });
 
         it("cộng dồn số lượng khi sách đã có trong giỏ", async () => {
@@ -194,7 +195,7 @@ describe("CartsService", () => {
                 where: { id: 10 },
                 data: { quantity: 3 },
             });
-            expect(redis.delete).toHaveBeenCalledWith(`cart:user:${USER_ID}`);
+            expect(redis.incrementRevision).toHaveBeenCalledWith(`cart:user:${USER_ID}:revision`);
         });
     });
 
@@ -213,7 +214,7 @@ describe("CartsService", () => {
 
             await expect(service.removeCartItem(USER_ID, 10)).resolves.toBe(deleted);
             expect(prisma.cartItem.delete).toHaveBeenCalledWith({ where: { id: 10 } });
-            expect(redis.delete).toHaveBeenCalledWith(`cart:user:${USER_ID}`);
+            expect(redis.incrementRevision).toHaveBeenCalledWith(`cart:user:${USER_ID}:revision`);
         });
     });
 });

@@ -3,40 +3,42 @@ import { CartsService } from "./carts.service.js";
 import { AddToCartDto } from "./dtos/cart-add-request.dto.js";
 import { UpdateCartItemDto } from "./dtos/cart-update-request.dto.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
-import { ApiBearerAuth } from "@nestjs/swagger";
+import { CartItemResponseDto, CartResponseDto } from "./dtos/cart-response.dto.js";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 
 
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
+@ApiTags("Carts")
 @Controller("carts")
 export class CartsController {
     constructor(private readonly cartsService: CartsService) {}
 
     @Get()
-    getCartById(@Req() req: any) {
+    async getCartById(@Req() req: any) {
         const userId = (req.user as any).id;
 
-        return this.cartsService.getCartById(userId);
+        return new CartResponseDto(await this.cartsService.getCartById(userId));
     }
 
     @Post("items")
-    addToCart(@Req() req: any, @Body() addToCartDto: AddToCartDto) {
+    async addToCart(@Req() req: any, @Body() addToCartDto: AddToCartDto) {
         const userId = (req.user as any).id;
-        return this.cartsService.addToCart(userId, addToCartDto);
+        return new CartItemResponseDto(await this.cartsService.addToCart(userId, addToCartDto));
     }
 
     @Patch("items/:cartItemId")
-    updateCartItem(
+    async updateCartItem(
         @Req() req: any,
         @Param("cartItemId", ParseIntPipe) cartItemId: number,
         @Body() dto: UpdateCartItemDto
     ) {
-        return this.cartsService.updateCartItemQuantity(req.user.id, cartItemId, dto);
+        return new CartItemResponseDto(await this.cartsService.updateCartItemQuantity(req.user.id, cartItemId, dto));
     }
 
     @Delete("items/:cartItemId")
-    removeCartItem(@Req() req:any, @Param("cartItemId", ParseIntPipe) cartItemId: number) {
-        return this.cartsService.removeCartItem(req.user.id, cartItemId);
+    async removeCartItem(@Req() req:any, @Param("cartItemId", ParseIntPipe) cartItemId: number) {
+        return new CartItemResponseDto(await this.cartsService.removeCartItem(req.user.id, cartItemId));
     }
 }

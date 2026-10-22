@@ -1,42 +1,97 @@
 name: Backend CI
 
-on:
-  push:
-  pull_request:
+on: [push, pull_request]
+
+permissions:
+  contents: read
 
 jobs:
   backend:
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: backend
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres@127.0.0.1:5432/bookstore_ci?schema=public
+      RABBITMQ_URL: amqp://ci:ci-${{ github.run_id }}@127.0.0.1:5672
+      RABBITMQ_QUEUE: bookstore_ci
+      RABBITMQ_DURABLE: "true"
+      RABBITMQ_PERSISTENT: "true"
+      MEILISEARCH_HOST: http://127.0.0.1:7700
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      CORS_ORIGINS: http://localhost:3000
+      DEMO_SEED_ENABLED: "true"
+      E2E_ISOLATED_DB: "YES"
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_DB: bookstore_ci
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bookstore_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      rabbitmq:
+        image: rabbitmq:3-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69
+        env:
+          RABBITMQ_DEFAULT_USER: ci
+          RABBITMQ_DEFAULT_PASS: ci-${{ github.run_id }}
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+      meilisearch:
+        image: getmeili/meilisearch:v1.15@sha256:fe500cf9cca05cb9f027981583f28eccf17d35d94499c1f8b7b844e7418152fc
+        env:
+          MEILI_ENV: development
+          MEILI_NO_ANALYTICS: "true"
+        ports:
+          - 7700:7700
+        options: >-
+          --health-cmd "curl --fail --silent http://127.0.0.1:7700/health"
+          --health-interval 5s --health-timeout 3s --health-retries 20
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
+      - name: Create disposable test credentials
+        run: |
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "SEED_DEFAULT_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+      - name: Install from lockfile
         run: npm ci
-
-      - name: Generate Prisma Client
+      - name: Generate Prisma client
         run: npm run prisma:generate
-
       - name: Lint
         run: npm run lint
-
+      - name: Typecheck
+        run: npm run typecheck
       - name: Build
         run: npm run build
-
-      - name: Test
+      - name: Unit tests
         run: npm test
+      - name: Migrate disposable database
+        run: npx prisma migrate deploy
+      - name: Seed disposable database
+        run: npm run prisma:seed
+      - name: End-to-end API tests
+        run: npm run test:e2e
 
   frontend:
     runs-on: ubuntu-latest
@@ -44,15 +99,15 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Install dependencies
+      - name: Install from lockfile
         run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build

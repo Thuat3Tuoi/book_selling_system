@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { OrderCreaterRequest } from "./dtos/order-creation-request.dto.js";
 import { OrderStatus, Prisma, type Order } from "../generated/prisma/client.js";
 import type { OrderUpdateRequest } from "./dtos/order-update-request.dto.js";
@@ -6,11 +6,10 @@ import type { OrderUpdateStatusRequest } from "./dtos/order-update-status-reques
 import { PrismaService } from "../prisma/prisma.service.js";
 import { BooksService } from "../books/books.service.js";
 import { RedisService } from "../redis/redis.service.js";
-import { BookStatus, OutboxEventType } from "../generated/prisma/enums.js";
+import { canManageCatalog, type AuthenticatedUser } from "../auth/authenticated-user.js";
 
 @Injectable()
 export class OrdersService {
-    private readonly logger = new Logger(OrdersService.name);
     constructor(
         private readonly prismaService: PrismaService,
         private readonly bookService: BooksService,
@@ -55,7 +54,7 @@ export class OrdersService {
             const books = await tx.book.findMany({
                 where: {
                     id: { in: bookIds },
-                    status: BookStatus.ACTIVE,
+                    status: "ACTIVE",
                 },
             });
 
@@ -113,10 +112,6 @@ export class OrdersService {
                 },
             });
 
-            await tx.outboxEvent.create({
-                data: { eventType: OutboxEventType.ORDER_CREATED, payload: { orderId: createdOrder.id, userId } },
-            });
-
             const cart = await tx.cart.findUnique({
                 where: { userId },
                 select: { id: true },
@@ -128,26 +123,27 @@ export class OrdersService {
                 });
             }
 
+            await tx.outboxEvent.create({
+                data: {
+                    topic: "order.created",
+                    payload: JSON.parse(JSON.stringify(createdOrder)),
+                },
+            });
+
             return createdOrder;
         });
 
         // 4. Transaction thành công: xóa cache
-        try {
-            await this.redis.delete(`cart:user:${userId}`);
-            await this.redis.deleteMany(...bookIds.map((id) => `book:${id}`));
-            await this.redis.deleteByPattern("books:page:*");
-            await this.redis.deleteByPattern("cart:user:*");
-        } catch (error) {
-            this.logger.error(`Order ${order.id} committed but cache invalidation failed: ${String(error)}`);
-        }
+        await this.redis.incrementRevision(`cart:user:${userId}:revision`);
+        for (const bookId of bookIds) await this.bookService.invalidateBookCaches(bookId);
 
         return order;
     };
 
-    getOrderById = async (orderId: number, userId: number): Promise<Order> => {
+    getOrderById = async (orderId: number, user: AuthenticatedUser): Promise<Order> => {
         const order = await this.prismaService.order.findFirst({
-            where: { id: orderId, userId },
-            include: { orderItems: { include: { book: true } } },
+            where: canManageCatalog(user) ? { id: orderId } : { id: orderId, userId: user.id },
+            include: { orderItems: { include: { book: { select: { id: true, title: true } } } } },
         });
 
         if (!order) {
@@ -157,10 +153,10 @@ export class OrdersService {
         return order;
     };
 
-    getOrders = async (userId: number): Promise<Order[]> => {
+    getOrders = async (user: AuthenticatedUser): Promise<Order[]> => {
         return this.prismaService.order.findMany({
-            where: { userId },
-            include: { orderItems: { include: { book: true } } },
+            where: canManageCatalog(user) ? undefined : { userId: user.id },
+            include: { orderItems: { include: { book: { select: { id: true, title: true } } } } },
             orderBy: { createdAt: "desc" },
         });
     };
@@ -168,24 +164,33 @@ export class OrdersService {
     updateOrder = async (
         orderId: number,
         orderUpdateRequest: OrderUpdateRequest,
-        userId: number,
+        user: AuthenticatedUser
     ): Promise<Order> => {
-        await this.getOrderById(orderId, userId);
-        return this.prismaService.order.update({
-            where: { id: orderId, userId },
-            data: { shippingAddress: orderUpdateRequest.shippingAddress },
-        });
+        const order = await this.getOrderById(orderId, user);
+        if (!canManageCatalog(user) && order.status !== OrderStatus.PENDING) {
+            throw new ForbiddenException("Only pending orders can be changed");
+        }
+        return this.updateOrderData(orderId, { shippingAddress: orderUpdateRequest.shippingAddress.trim() });
     };
 
     updateStatusOrder = async (
         orderId: number,
         orderUpdateStatusRequest: OrderUpdateStatusRequest
     ): Promise<Order> => {
-        const order = await this.prismaService.order.findUnique({ where: { id: orderId } });
-        if (!order) throw new NotFoundException("Order not found!");
+        return this.updateOrderData(orderId, orderUpdateStatusRequest);
+    };
+
+    private updateOrderData = async (
+        orderId: number,
+        data: Prisma.OrderUpdateInput
+    ): Promise<Order> => {
+        const exists = await this.prismaService.order.findUnique({ where: { id: orderId } });
+        if (!exists) throw new NotFoundException("Order not found!");
+
         return this.prismaService.order.update({
             where: { id: orderId },
-            data: { status: orderUpdateStatusRequest.status },
+            data,
+            include: { orderItems: { include: { book: { select: { id: true, title: true } } } } },
         });
     };
 }

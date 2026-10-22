@@ -1,12 +1,15 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
-import type { CookieOptions, Request, Response } from "express";
 import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
+import { JwtService } from "@nestjs/jwt";
+import type { Request, Response } from "express";
 import { PrismaService } from "../prisma/prisma.service.js";
 
 import { CreateUserDto } from "../user/dto/create-user.dto.js";
 import { UserService } from "../user/user.service.js";
+import { UserResponseDto } from "../user/dto/user-response.dto.js";
+import { cookieOptions } from "./refresh-cookie-options.js";
+import { allowedOrigins } from "../config/environment.js";
 
 @Injectable()
 export class AuthService {
@@ -14,7 +17,7 @@ export class AuthService {
         private readonly prisma: PrismaService,
         private readonly jwtService: JwtService,
         private readonly userService: UserService,
-        private readonly configService: ConfigService,
+        private readonly config: ConfigService,
     ) {}
 
     async register(dto: CreateUserDto) {
@@ -24,7 +27,7 @@ export class AuthService {
     async login(data: any, res?: Response) {
         const user = await this.userService.findUserByEmail(data.email);
 
-        if (!user) {
+        if (!user || !user.status) {
             throw new UnauthorizedException("Invalid email or password");
         }
         // ACCESS TOKEN
@@ -56,19 +59,14 @@ export class AuthService {
         });
 
 
-        res?.cookie("refreshToken", refreshToken, this.refreshCookieOptions());
+        res?.cookie("refreshToken", refreshToken, {
+            ...this.refreshCookieOptions(),
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
 
         return {
             accessToken,
-            user: {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phone: user.phoneNumber,
-                address: user.address,
-                roleId: user.roleId,
-            },
+            user: new UserResponseDto(user),
         };
     }
 
@@ -81,37 +79,39 @@ export class AuthService {
         }
     }
 
-    async rotateRefreshToken(ref: string, res: Response) {
+    async refreshAccessToken(ref: string) {
         const user = await this.verifyRefreshToken(ref);
-        if (!user) return null;
-
-        const revoked = await this.prisma.session.deleteMany({
-            where: { ref, userId: user.id },
-        });
-        if (revoked.count !== 1) return null;
-
-        return this.login(user, res);
-    }
-
-    refreshCookieOptions(): CookieOptions {
-        const production = this.configService.get<string>("NODE_ENV") === "production";
+        if (!user) throw new UnauthorizedException("Refresh Token is invalid");
         return {
-            httpOnly: true,
-            secure: production,
-            sameSite: production ? "none" : "lax",
-            path: "/auth",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+            accessToken: await this.jwtService.signAsync({
+                sub: user.id,
+                email: user.email,
+                role: user.roleId,
+            }),
         };
     }
 
+    refreshCookieOptions() {
+        return cookieOptions(this.config.get<string>("NODE_ENV"));
+    }
+
     assertCookieOrigin(req: Request): void {
-        if (this.configService.get<string>("NODE_ENV") !== "production" || !req.cookies?.refreshToken) return;
-        const origin = req.get("origin");
-        const allowed = (this.configService.get<string>("CORS_ORIGINS") ?? "")
-            .split(",").map((value) => value.trim()).filter(Boolean);
-        if (!origin || !allowed.includes(origin)) {
-            throw new ForbiddenException("Origin not allowed for cookie authentication");
+        if (!req.cookies?.refreshToken) return;
+        const origin = req.get("Origin");
+        const nodeEnv = this.config.get<string>("NODE_ENV");
+        const origins = allowedOrigins(this.config.get<string>("CORS_ORIGINS"), nodeEnv);
+        if ((nodeEnv === "production" && !origin) || (origin && !origins.includes(origin))) {
+            throw new ForbiddenException("Invalid cookie request origin");
         }
+    }
+
+    async rotateRefreshToken(ref: string, res: Response) {
+        const user = await this.verifyRefreshToken(ref);
+        if (!user) return null;
+        const deleted = await this.prisma.session.deleteMany({ where: { ref, userId: user.id } });
+        if (deleted.count !== 1) return null;
+        const result = await this.login(user, res);
+        return { accessToken: result.accessToken };
     }
 
     async logout(refreshToken: string) {

@@ -1,61 +1,38 @@
-# Redis: kiểm tra và sử dụng cache
+﻿# Cơ chế cache bằng Redis
 
-Redis lưu bản sao tạm thời của sách và giỏ hàng. PostgreSQL là nơi lưu dữ liệu gốc. Hướng dẫn này dùng Bash (Linux hoặc Git Bash); chạy các lệnh Docker tại **thư mục gốc repository** sau khi đã [khởi động toàn hệ thống](../../../README.md).
+Redis lưu bản sao dữ liệu phục vụ cache; PostgreSQL là nguồn dữ liệu chính. Backend xử lý request bằng PostgreSQL khi Redis không sẵn sàng. Endpoint `/health` báo lỗi khi Redis mất kết nối để phản ánh trạng thái dịch vụ cache.
 
-## Kiểm tra Redis
+## 1. Phạm vi cache và thời gian lưu
 
-```bash
-docker compose ps redis backend
-docker compose exec -T redis redis-cli PING
-```
-
-`PING` phải trả `PONG`. Compose kết nối backend đến `redis:6379`; cổng Redis không được mở ra máy host.
-
-## Thử cache của danh sách sách
-
-Gọi cùng URL hai lần:
-
-```bash
-curl -fsS 'http://localhost:3001/books?page=1&limit=10'
-curl -fsS 'http://localhost:3001/books?page=1&limit=10'
-docker compose logs --tail=30 backend
-docker compose exec -T redis redis-cli TTL books:page:1:limit:10
-```
-
-Log backend ghi `CACHE MISS` khi đọc PostgreSQL và `CACHE HIT` khi đọc lại từ Redis. Nếu key đã tồn tại trước lần gọi đầu tiên, cả hai lần có thể là `CACHE HIT`. `TTL` trả số giây còn lại (tối đa 300); `-2` nghĩa là key không tồn tại hoặc đã hết hạn. Có thể xem giá trị JSON:
-
-```bash
-docker compose exec -T redis redis-cli GET books:page:1:limit:10
-```
-
-Để thử lại từ `CACHE MISS`, chỉ xóa key của trang đang kiểm tra rồi gọi lại URL:
-
-```bash
-docker compose exec -T redis redis-cli DEL books:page:1:limit:10
-curl -fsS 'http://localhost:3001/books?page=1&limit=10'
-```
-
-`DEL` ở đây chỉ xóa bản sao cache, không xóa sách trong PostgreSQL.
-
-## Các key ứng dụng sử dụng
-
-| API | Key | TTL |
+| API | Key cache | TTL |
 | --- | --- | --- |
-| `GET /books?page=<page>&limit=<limit>` | `books:page:<page>:limit:<limit>` | 300 giây |
-| `GET /books/:id` | `book:<id>` | 300 giây |
-| `GET /carts` (cần đăng nhập) | `cart:user:<userId>` | 300 giây |
+| `GET /books` | `books:page:<page>:limit:<limit>:rev:<version>` | 300 giây |
+| `GET /books/:id` | `book:<id>:rev:<version>` | 300 giây |
+| `GET /carts` | `cart:user:<userId>:rev:<version>:catalog:<version>` | 300 giây |
 
-Muốn kiểm tra cache chi tiết sách, chọn ID của một sách đang bán rồi gọi `GET /books/<id>` hai lần. Sau đó chạy `docker compose exec -T redis redis-cli TTL book:<id>` với ID thực tế.
+## 2. Cập nhật phiên bản và xử lý mất kết nối
 
-Khi tạo, sửa hoặc ngừng bán sách, backend xóa cache danh sách liên quan; khi sửa hoặc ngừng bán, backend cũng xóa cache chi tiết sách và giỏ hàng. Thao tác giỏ hàng xóa cache giỏ của người dùng đó. Đặt hàng xóa cache giỏ, danh sách và sách có tồn kho thay đổi. Redis gián đoạn thì thao tác đọc lấy dữ liệu từ PostgreSQL; backend thử xóa các key đang chờ khi kết nối lại.
+Mỗi request đọc phiên bản cache trước khi đọc bản sao. Sau khi tạo, sửa, ngừng bán sách hoặc đặt hàng trừ tồn kho, backend tăng phiên bản sách, danh sách và catalog giỏ hàng **sau khi transaction PostgreSQL hoàn tất**. Thao tác thêm, sửa, xóa mục giỏ hoặc đặt hàng tăng phiên bản giỏ của tài khoản tương ứng. Request đang xử lý có thể ghi cache theo phiên bản cũ; các request mới sử dụng key theo phiên bản mới. Key cũ tự hết hạn sau 300 giây.
 
-## Xử lý sự cố
+Khi Redis kết nối lại, `RedisService` xóa các key cache của ứng dụng trước khi cho phép cache hit. Khi một lệnh Redis thất bại, API đọc dữ liệu từ PostgreSQL. Quy trình kiểm tra sử dụng `--scan` và `TTL`, không sử dụng `FLUSHDB` hoặc `FLUSHALL` để tránh xóa dữ liệu Redis ngoài phạm vi cache đang kiểm tra.
 
-| Hiện tượng | Thực hiện |
+## 3. Quy trình kiểm tra trong Docker Compose
+
+Các lệnh sau kiểm tra kết nối Redis, liệt kê key cache danh sách sách và truy xuất nhật ký backend:
+
+```bash
+docker compose exec -T redis redis-cli ping
+docker compose exec -T redis redis-cli --scan --pattern 'books:page:*'
+docker compose logs --tail=50 backend
+```
+
+Nội dung kiểm tra và kết quả mong đợi:
+
+| Thao tác | Kết quả mong đợi |
 | --- | --- |
-| Không nhận `PONG` | Chạy `docker compose ps --all` và `docker compose logs --tail=100 redis`. |
-| Không thấy `CACHE HIT` | Gọi lại đúng URL và tham số trước khi TTL hết; xem `docker compose logs --tail=100 backend`. |
-| `/health` trả lỗi dù Redis có `PONG` | Kiểm tra thêm PostgreSQL và Meilisearch theo [hướng dẫn Compose](../../../README.md). |
-| Dữ liệu cache không đúng sau khi sửa PostgreSQL trực tiếp | Xóa key cụ thể bằng `redis-cli DEL` hoặc cập nhật qua API để backend tự vô hiệu hóa cache. |
+| Gọi `GET /books?page=1&limit=10` hai lần | Nhật ký ghi nhận `CACHE MISS`, sau đó là `CACHE HIT`. |
+| Lấy key từ `--scan` và chạy `redis-cli TTL '<key>'` | TTL hợp lệ của bản sao nằm trong khoảng 0–300 giây. |
+| Sửa sách rồi đọc lại | Key có `rev` mới; phản hồi chứa dữ liệu PostgreSQL đã cập nhật. |
+| Dừng Redis rồi gọi API sách và `/health` | API sách trả dữ liệu từ PostgreSQL; `/health` báo dependency unavailable. |
 
-Mã nguồn: [RedisService](redis.service.ts), [BooksService](../books/books.service.ts), [CartsService](../carts/carts.service.ts).
+Mã nguồn: [`redis.service.ts`](redis.service.ts), [`books.service.ts`](../books/books.service.ts), [`carts.service.ts`](../carts/carts.service.ts), [`orders.service.ts`](../orders/orders.service.ts).

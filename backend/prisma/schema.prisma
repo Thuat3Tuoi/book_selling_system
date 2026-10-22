@@ -51,7 +51,6 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([ref])
 }
 
 model Book {
@@ -71,6 +70,7 @@ model Book {
   cartItems CartItem[]
 
   orderItems OrderItem[]
+
 }
 
 model Cart {
@@ -148,16 +148,17 @@ model Notification {
 }
 
 model OutboxEvent {
-  id            String   @id @default(uuid())
-  eventType     OutboxEventType
+  id            String    @id @default(uuid())
+  topic         String
   payload       Json
-  status        OutboxStatus @default(PENDING)
-  attempts      Int      @default(0)
-  nextAttemptAt DateTime @default(now())
+  createdAt     DateTime  @default(now())
   publishedAt   DateTime?
-  createdAt     DateTime @default(now())
+  lockedUntil   DateTime?
+  nextAttemptAt DateTime  @default(now())
+  attempts      Int       @default(0)
+  lastError     String?
 
-  @@index([status, nextAttemptAt])
+  @@index([publishedAt, nextAttemptAt])
 }
 
 model BookSearchSync {

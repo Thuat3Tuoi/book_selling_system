@@ -1,31 +1,35 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Redis } from "ioredis";
 import { ConfigService } from "@nestjs/config";
+import { randomUUID } from "node:crypto";
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(RedisService.name);
     private readonly redis: Redis;
-    private readonly pendingKeys = new Set<string>();
-    private readonly pendingPatterns = new Set<string>();
-    private pendingFlush?: Promise<void>;
+    private cacheReady = false;
+    private clearingCache = false;
+    private recoveryTimer?: NodeJS.Timeout;
 
     constructor(private readonly configService: ConfigService) {
         this.redis = new Redis({
             host: this.configService.get<string>("REDIS_HOST", "localhost"),
             port: this.configService.get<number>("REDIS_PORT", 6379),
             password: this.configService.get<string>("REDIS_PASSWORD") || undefined,
-            enableOfflineQueue: false,
-            maxRetriesPerRequest: 1,
             connectTimeout: 1000,
+            commandTimeout: 1000,
+            maxRetriesPerRequest: 1,
         });
+        this.redis.on("error", (error: Error) => this.logger.warn(`Redis: ${error.message}`));
+        this.redis.on("close", () => { this.cacheReady = false; });
+        this.redis.on("ready", () => { void this.clearApplicationCaches(); });
     }
 
     async onModuleInit() {
         try {
             await this.ping();
-        } catch {
-            this.logger.warn("Redis unavailable at startup; cache will be bypassed");
+        } catch (error) {
+            this.logger.warn(`Cache unavailable at startup: ${(error as Error).message}`);
         }
     }
 
@@ -36,89 +40,165 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
 
     async onModuleDestroy() {
+        if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
         this.redis.disconnect();
     }
 
     async get<T>(key: string): Promise<T | null> {
-        if (!await this.flushInvalidations()) {
-            return null;
-        }
+        if (!this.cacheReady) return null;
         try {
             const value = await this.redis.get(key);
-            return value ? JSON.parse(value) as T : null;
-        } catch {
+
+            return value === null ? null : JSON.parse(value) as T;
+        } catch (error) {
+            this.cacheReady = false;
+            this.scheduleRecovery();
+            this.logger.warn(`Cache read failed (${key}): ${(error as Error).message}`);
             return null;
         }
     }
 
     async set(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
-        if (!await this.flushInvalidations()) return;
-        const data = JSON.stringify(value);
+        if (!this.cacheReady) return;
         try {
+            const data = JSON.stringify(value);
             if (ttlSeconds) {
                 await this.redis.set(key, data, "EX", ttlSeconds);
             } else {
                 await this.redis.set(key, data);
             }
-        } catch {
-            this.logger.warn("Redis cache write skipped while unavailable");
+        } catch (error) {
+            this.cacheReady = false;
+            this.scheduleRecovery();
+            this.logger.warn(`Cache write failed (${key}): ${(error as Error).message}`);
         }
     }
 
     async delete(key: string): Promise<void> {
-        this.pendingKeys.add(key);
-        await this.flushInvalidations();
+        await this.deleteMany(key);
     }
 
     async deleteMany(...keys: string[]): Promise<void> {
-        for (const key of keys) this.pendingKeys.add(key);
-        await this.flushInvalidations();
-    }
-
-    async deleteByPattern(pattern: string): Promise<void> {
-        this.pendingPatterns.add(pattern);
-        await this.flushInvalidations();
-    }
-
-    private async flushInvalidations(): Promise<boolean> {
-        if (this.pendingFlush) {
-            try {
-                await this.pendingFlush;
-            } catch {
-                return false;
-            }
+        if (keys.length === 0) {
+            return;
         }
-        if (this.pendingKeys.size === 0 && this.pendingPatterns.size === 0) return true;
 
-        this.pendingFlush = this.deletePending();
         try {
-            await this.pendingFlush;
-            return true;
-        } catch {
-            this.logger.warn("Redis invalidation postponed until the cache reconnects");
-            return false;
+            await this.redis.del(...keys);
+        } catch (error) {
+            this.cacheReady = false;
+            this.scheduleRecovery();
+            this.logger.warn(`Cache invalidation failed: ${(error as Error).message}`);
+        }
+    }
+
+    async deleteByPrefix(prefix: string): Promise<void> {
+        try {
+            let cursor = "0";
+            do {
+                const [next, keys] = await this.redis.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
+                if (keys.length) await this.redis.del(...keys);
+                cursor = next;
+            } while (cursor !== "0");
+        } catch (error) {
+            this.cacheReady = false;
+            this.scheduleRecovery();
+            this.logger.warn(`Cache invalidation failed (${prefix}): ${(error as Error).message}`);
+        }
+    }
+
+    async getRevision(key: string): Promise<number | null> {
+        if (!this.cacheReady) return null;
+        try {
+            return Number(await this.redis.get(key) ?? 0);
+        } catch (error) {
+            this.cacheReady = false;
+            this.scheduleRecovery();
+            this.logger.warn(`Cache revision read failed (${key}): ${(error as Error).message}`);
+            return null;
+        }
+    }
+
+    async incrementRevision(key: string): Promise<void> {
+        try {
+            await this.redis.incr(key);
+        } catch (error) {
+            this.cacheReady = false;
+            this.scheduleRecovery();
+            this.logger.warn(`Cache revision update failed (${key}): ${(error as Error).message}`);
+        }
+    }
+
+    private async clearApplicationCaches(): Promise<void> {
+        if (this.clearingCache) return;
+        this.clearingCache = true;
+        this.cacheReady = false;
+        try {
+            for (const prefix of ["books:page:", "book:", "cart:user:"]) {
+                let cursor = "0";
+                do {
+                    const [next, keys] = await this.redis.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
+                    if (keys.length) await this.redis.del(...keys);
+                    cursor = next;
+                } while (cursor !== "0");
+            }
+            this.cacheReady = true;
+        } catch (error) {
+            this.logger.warn(`Could not clear cache after Redis reconnect: ${(error as Error).message}`);
+            this.scheduleRecovery();
         } finally {
-            this.pendingFlush = undefined;
+            this.clearingCache = false;
         }
     }
 
-    private async deletePending(): Promise<void> {
-        for (const key of this.pendingKeys) {
-            await this.redis.del(key);
-            this.pendingKeys.delete(key);
-        }
-        for (const pattern of this.pendingPatterns) {
-            await this.deletePattern(pattern);
-            this.pendingPatterns.delete(pattern);
-        }
+    private scheduleRecovery(): void {
+        if (this.recoveryTimer) return;
+        this.recoveryTimer = setTimeout(() => {
+            this.recoveryTimer = undefined;
+            if (this.redis.status === "ready") void this.clearApplicationCaches();
+            else this.scheduleRecovery();
+        }, 1000);
     }
 
-    private async deletePattern(pattern: string): Promise<void> {
-        let cursor = "0";
-        do {
-            const [next, keys] = await this.redis.scan(cursor, "MATCH", pattern, "COUNT", 100);
-            if (keys.length) await this.redis.del(...keys);
-            cursor = next;
-        } while (cursor !== "0");
+    async withLock(key: string, ttlSeconds: number, task: (signal: AbortSignal) => Promise<void>): Promise<boolean> {
+        const token = randomUUID();
+        try {
+            const acquired = await this.redis.set(key, token, "EX", ttlSeconds, "NX");
+            if (acquired !== "OK") return false;
+        } catch (error) {
+            this.logger.warn(`Lock unavailable (${key}): ${(error as Error).message}`);
+            return false;
+        }
+        const controller = new AbortController();
+        let stopped = false;
+        let renewalTimer: NodeJS.Timeout | undefined;
+        const renew = async () => {
+            if (stopped) return;
+            try {
+                const renewed = await this.redis.eval(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end",
+                    1, key, token, ttlSeconds,
+                );
+                if (renewed !== 1) throw new Error("lock ownership lost");
+            } catch (error) {
+                controller.abort();
+                this.logger.error(`Lock renewal failed (${key}): ${(error as Error).message}`);
+                return;
+            }
+            if (!stopped) renewalTimer = setTimeout(() => void renew(), Math.max(100, ttlSeconds * 250));
+        };
+        renewalTimer = setTimeout(() => void renew(), Math.max(100, ttlSeconds * 250));
+        try {
+            await task(controller.signal);
+            controller.signal.throwIfAborted();
+        } finally {
+            stopped = true;
+            if (renewalTimer) clearTimeout(renewalTimer);
+            await this.redis.eval(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                1, key, token,
+            ).catch((error: Error) => this.logger.warn(`Lock release failed: ${error.message}`));
+        }
+        return true;
     }
 }

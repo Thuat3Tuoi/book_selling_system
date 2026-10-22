@@ -55,8 +55,9 @@ describe("BooksController", () => {
         expect(booksService.createBook).toHaveBeenCalledWith(dto);
     });
 
-    it("getBooks chuyen tham so da duoc ValidationPipe xu ly cho service", async () => {
+    it("getBooks truyền giá trị phân trang đã được pipe chuyển đổi", async () => {
         booksService.getBooks.mockResolvedValue({ data: [], meta: {} });
+
         await controller.getBooks({ page: 2, limit: 20 });
 
         expect(booksService.getBooks).toHaveBeenCalledWith(2, 20);
@@ -65,7 +66,7 @@ describe("BooksController", () => {
     it("getBooks dùng giá trị mặc định khi không truyền query param", async () => {
         booksService.getBooks.mockResolvedValue({ data: [], meta: {} });
 
-        await controller.getBooks({ page: 1, limit: 10 });
+        await controller.getBooks({});
 
         expect(booksService.getBooks).toHaveBeenCalledWith(1, 10);
     });

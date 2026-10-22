@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { PrismaService } from "../prisma/prisma.service.js";
 import { CreateUserDto } from "./dto/create-user.dto.js";
 import * as bcrypt from "bcrypt";
-import { RoleName } from "../generated/prisma/enums.js";
+import type { AuthenticatedUser } from "../auth/authenticated-user.js";
 @Injectable()
 export class UserService {
     constructor(private readonly prisma: PrismaService) {}
@@ -18,11 +18,6 @@ export class UserService {
         }
 
         const passwordHash = await bcrypt.hash(data.password, 10);
-        await this.prisma.role.upsert({
-            where: { roleName: RoleName.CUSTOMER },
-            create: { roleName: RoleName.CUSTOMER },
-            update: {},
-        });
         await this.prisma.user.create({
             data: {
                 firstName: data.firstName,
@@ -31,7 +26,7 @@ export class UserService {
                 passwordHash: passwordHash,
                 phoneNumber: data?.phoneNumber,
                 address: data?.address,
-                role: { connect: { roleName: RoleName.CUSTOMER } },
+                role: { connect: { roleName: "CUSTOMER" } },
             },
         });
         return {
@@ -47,11 +42,24 @@ export class UserService {
         });
     }
 
-    findAuthPrincipalByEmail(email: string) {
-        return this.prisma.user.findUnique({
-            where: { email },
-            select: { id: true, email: true, status: true, role: { select: { roleName: true, status: true } } },
+    async findAuthUserById(id: number): Promise<AuthenticatedUser | null> {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phoneNumber: true,
+                address: true,
+                roleId: true,
+                status: true,
+                role: { select: { roleName: true, status: true } },
+            },
         });
+        if (!user?.status || !user.role.status) return null;
+        const { status: _status, role, ...safeUser } = user;
+        return { ...safeUser, role: { roleName: role.roleName } };
     }
 
     // Thêm mới: dùng cho GET /user/me — trả user theo id, không kèm passwordHash
@@ -78,7 +86,7 @@ export class UserService {
             return null;
         }
         const status = await bcrypt.compare(password, user.passwordHash);
-        if (status && user.status) {
+        if (status) {
             // xóa passwordHash trước khi trả về user
             const { passwordHash: _passwordHash, ...safeUser } = user;
             return safeUser;
@@ -94,7 +102,6 @@ export class UserService {
                 user: {
                     id: userId,
                     status: true,
-                    role: { status: true },
                 },
             },
             include: {

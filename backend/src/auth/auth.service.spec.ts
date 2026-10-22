@@ -9,20 +9,20 @@ describe("AuthService refresh token rotation", () => {
     const deleteMany = vi.fn();
     const createSession = vi.fn();
     const signAsync = vi.fn().mockResolvedValue("token");
-    const findUserByEmail = vi.fn().mockResolvedValue({ id: 3, email: "customer@example.com", roleId: 2 });
+    const findUserByEmail = vi.fn().mockResolvedValue({ id: 3, email: "customer@example.com", roleId: 2, status: true });
     let service: AuthService;
 
     beforeEach(async () => {
         vi.resetAllMocks();
         signAsync.mockResolvedValue("token");
-        findUserByEmail.mockResolvedValue({ id: 3, email: "customer@example.com", roleId: 2 });
+        findUserByEmail.mockResolvedValue({ id: 3, email: "customer@example.com", roleId: 2, status: true });
         const module = await Test.createTestingModule({
             providers: [
                 AuthService,
                 { provide: PrismaService, useValue: { session: { deleteMany, create: createSession } } },
                 { provide: JwtService, useValue: { signAsync } },
                 { provide: UserService, useValue: { findUserByEmail } },
-                { provide: ConfigService, useValue: { get: () => "development" } },
+                { provide: ConfigService, useValue: { get: (key: string) => key === "NODE_ENV" ? "development" : "http://localhost:3000" } },
             ],
         }).compile();
         service = module.get(AuthService);

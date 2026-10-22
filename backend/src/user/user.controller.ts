@@ -1,8 +1,12 @@
 import { Controller, Get, Req, UseGuards } from "@nestjs/common";
 import { UserService } from "./user.service.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
-import { ApiBearerAuth } from "@nestjs/swagger";
+import { UserResponseDto } from "./dto/user-response.dto.js";
+import type { Request } from "express";
+import type { AuthenticatedUser } from "../auth/authenticated-user.js";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
+@ApiTags("User")
 @Controller("user")
 export class UserController {
     constructor(private readonly userService: UserService) {}
@@ -10,8 +14,8 @@ export class UserController {
     @UseGuards(JwtAuthGuard)
     @ApiBearerAuth()
     @Get("me")
-    getMe(@Req() req: any) {
-        // req.user được JwtStrategy gán — dựa theo auth.controller.ts payload có { sub, email, role }
-        return this.userService.findUserById(req.user.id);
+    async getMe(@Req() req: Request & { user: AuthenticatedUser }) {
+        const user = await this.userService.findUserById(req.user.id);
+        return new UserResponseDto(user);
     }
 }

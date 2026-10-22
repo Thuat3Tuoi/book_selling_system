@@ -1,81 +1,46 @@
-## Chạy Backend với Docker Compose
+# Triển khai backend bằng Docker Compose
 
-Đây là cấu hình **chỉ chạy backend** từ thư mục `backend`. Để khởi động cả frontend và backend bằng một lệnh tại thư mục gốc, xem [README chính](../README.md). Hai cấu hình dùng Compose project và named volumes riêng.
+Tệp `backend/docker-compose.yml` triển khai API và các dịch vụ phụ thuộc. Cấu hình sử dụng Compose project và volume riêng so với [cấu hình toàn hệ thống ở thư mục gốc](../README.md). Thư mục thực thi các lệnh Docker trong tài liệu là **`backend/`**.
 
-### 1. Cấu hình môi trường
+## 1. Cấu hình môi trường và khởi động
 
-Trong thư mục `backend`, tạo `.env` từ `.env.example` nếu chưa có.
+Tệp `.env` được tạo từ `.env.example`, gồm các biến `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, `MEILISEARCH_API_KEY` và `JWT_SECRET` có độ dài tối thiểu 32 ký tự. Biến `SEED_DEFAULT_PASSWORD` được cấu hình khi sử dụng dữ liệu mẫu. Mật khẩu PostgreSQL và RabbitMQ sử dụng chuỗi an toàn trong URL. Tệp `.env` chứa thông tin bí mật và được loại khỏi nội dung commit.
 
-Cấu hình các biến bảo mật:
-
-- `POSTGRES_PASSWORD`
-- `RABBITMQ_PASSWORD`
-- `MEILISEARCH_API_KEY`
-- `JWT_SECRET`
-
-Sử dụng chuỗi ngẫu nhiên đủ dài (ưu tiên hex cho mật khẩu). Nếu `.env` đã tồn tại, chỉ bổ sung biến còn thiếu và **không commit `.env` lên Git**.
-
-Docker Compose tự cấu hình kết nối nội bộ giữa các service. Các cổng dependency không được public ra host.
-
-### 2. Khởi chạy
+Trình tự khởi động từ thư mục gốc repository:
 
 ```bash
 cd backend
+cp .env.example .env
+# Điền các giá trị bí mật trong .env
 docker compose config --quiet
-docker compose up -d --build
+docker compose up --build -d
 docker compose ps --all
 ```
 
-Backend mặc định chạy tại `http://localhost:3001`. Có thể thay đổi bằng `BACKEND_PORT` trong `.env`.
+Compose áp dụng migration rồi chạy service `seed`. `seed.ts` **bổ sung các bản ghi mẫu còn thiếu** khi `DEMO_SEED_ENABLED=true` và `NODE_ENV=development` hoặc `test`; bước seed được bỏ qua khi `DEMO_SEED_ENABLED=false`. Phạm vi sử dụng seed là database phát triển và kiểm thử. Các tài khoản mẫu gồm `admin@bookstore.example.com`, `staff@bookstore.example.com` và khách hàng; mật khẩu khởi tạo được lấy từ `SEED_DEFAULT_PASSWORD`. Mật khẩu của tài khoản đã tồn tại được giữ nguyên.
 
-Prisma migration được tự động thực thi trước khi backend khởi động.
+## 2. Dịch vụ và đồng bộ tìm kiếm
 
-Nếu cần tài khoản mẫu trên **database phát triển tách biệt**, đặt
-`SEED_DEFAULT_PASSWORD` và `SEED_SAMPLE_DATA=YES` trong `.env`, rồi chạy:
+Backend mặc định ở `http://localhost:3001`; Swagger ở `/api/docs` và OpenAPI JSON ở `/api/docs-json`. `GET /health` kiểm tra PostgreSQL, Redis và Meilisearch. RabbitMQ được Compose health check và kết nối microservice kiểm tra khi khởi động. Các cổng PostgreSQL, Redis, RabbitMQ và Meilisearch không mở ra host.
 
-```bash
-docker compose --profile tools run --rm seed-safe
-```
-
-Lệnh này chỉ thêm bản ghi mẫu còn thiếu. Không chạy seed trên database production.
-
-Khi index tìm kiếm bị lệch sau lỗi Meilisearch, chạy `docker compose --profile tools run --rm search-reindex`. Lệnh này **xóa toàn bộ tài liệu trong index sách và tạo lại từ các sách ACTIVE**, nên search có thể tạm thời thiếu kết quả trong lúc rebuild. Không chạy đồng thời với thao tác ghi sách.
-
-Outbox đơn hàng retry khi broker gián đoạn; thông báo dùng `eventId` duy nhất để không tạo trùng khi message được phát lại. Message consumer lỗi chuyển vào queue `.outbox-v1.dlq` để người vận hành kiểm tra. Redis lỗi thì request đọc dùng PostgreSQL; khi Redis trở lại, các key cần invalidation được xóa trước khi dùng cache lại.
-
-### 3. Kiểm tra hoạt động
-
-Khi backend đạt trạng thái `healthy`, kiểm tra:
-
-```text
-http://localhost:3001/health
-```
-
-Endpoint kiểm tra PostgreSQL, Redis và Meilisearch. RabbitMQ được kiểm tra qua container health check và kết nối microservice.
-
-`npm run test:e2e` cần database thử nghiệm riêng và `E2E_ISOLATED_DB=YES`; file `test/runtime.e2e-spec.ts` còn cần `E2E_BASE_URL` và `E2E_SAMPLE_PASSWORD` để gọi API container. Xem [báo cáo kiểm chứng runtime](docs/evidence/runtime-verification-20261019.md) để biết phạm vi đã chạy.
-
-### 4. Các lệnh thường dùng
+Lệnh đối soát chỉ mục Meilisearch sau khi bổ sung dữ liệu bằng seed:
 
 ```bash
-# Xem logs
-docker compose logs -f backend
+docker compose exec -T backend node dist/search/reindex.script.js
+```
 
-# Kiểm tra trạng thái
+Backend cũng tự đối soát index khi khởi động và mỗi 15 phút. Tạo/sửa/ngừng bán sách qua API ghi yêu cầu đồng bộ bền vững trong PostgreSQL; worker thử lại khi Meilisearch hồi phục.
+
+## 3. Điều kiện kiểm thử E2E
+
+Môi trường E2E sử dụng **database cô lập** và biến `E2E_ISOLATED_DB=YES`. Kiểm thử HTTP container sử dụng thêm `E2E_BASE_URL`, `E2E_SAMPLE_PASSWORD` và `E2E_ALLOWED_ORIGIN`; giá trị origin tương ứng với `CORS_ORIGINS` của backend. Phạm vi và kết quả kiểm thử đã thực hiện được ghi trong [biên bản ngày 21/10/2026](docs/evidence/audit-2026-10-21.md).
+
+## 4. Nhật ký vận hành và dừng hệ thống
+
+```bash
+docker compose logs --tail=100 migrate seed backend
 docker compose ps --all
-
-# Khởi động lại backend
-docker compose restart backend
-
-# Chạy lại migration
-docker compose run --rm migrate
-
-# Dừng các service
-docker compose stop
+docker compose down
 ```
 
-### 5. Lưu ý về dữ liệu
-
-PostgreSQL, RabbitMQ và Meilisearch sử dụng Docker named volumes để lưu dữ liệu. Redis chỉ dùng làm cache.
-
-**Không chạy `docker compose down -v` nếu muốn giữ dữ liệu.**
+`docker compose down` giữ dữ liệu trong named volumes. `docker compose down -v` xóa các volume PostgreSQL, RabbitMQ và Meilisearch của **Compose project đang chọn**.

@@ -22,6 +22,16 @@ RUN npm run prisma:generate
 USER node
 CMD ["./node_modules/.bin/prisma", "migrate", "deploy"]
 
+FROM build AS seed
+ENV NODE_ENV=development
+USER node
+CMD ["./node_modules/.bin/tsx", "prisma/seed.ts"]
+
+FROM build AS seed-safe
+ENV NODE_ENV=development
+USER node
+CMD ["npm", "run", "prisma:seed:safe"]
+
 FROM base AS production-dependencies
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --no-audit --no-fund --fetch-retries=5

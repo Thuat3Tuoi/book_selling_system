@@ -25,10 +25,15 @@ export class CartsService {
     // =========================
 
     getCartById = async (userId: number): Promise<Cart> => {
-        const cacheKey = `cart:user:${userId}`;
+        const [userRevision, catalogRevision] = await Promise.all([
+            this.redis.getRevision(`cart:user:${userId}:revision`),
+            this.redis.getRevision("cart:catalog:revision"),
+        ]);
+        const cacheAvailable = userRevision !== null && catalogRevision !== null;
+        const cacheKey = `cart:user:${userId}:rev:${userRevision}:catalog:${catalogRevision}`;
         
         // 1. Kiểm tra Redis
-        const cachedCart = await this.redis.get<Cart>(cacheKey);
+        const cachedCart = cacheAvailable ? await this.redis.get<Cart>(cacheKey) : null;
 
         if (cachedCart) {
             return cachedCart;
@@ -61,7 +66,7 @@ export class CartsService {
         }
 
         // 4. Lưu Redis
-        await this.redis.set(cacheKey, cart, this.CACHE_TTL);
+        if (cacheAvailable) await this.redis.set(cacheKey, cart, this.CACHE_TTL);
 
         return cart;
     };
@@ -119,7 +124,7 @@ export class CartsService {
         }
 
         // DB thay đổi -> xóa cache
-        await this.redis.delete(`cart:user:${userId}`);
+        await this.redis.incrementRevision(`cart:user:${userId}:revision`);
 
         return cartItem;
     };
@@ -168,7 +173,7 @@ export class CartsService {
                 quantity: updateCartItemDto.quantity,
             },
         });
-        await this.redis.delete(`cart:user:${userId}`);
+        await this.redis.incrementRevision(`cart:user:${userId}:revision`);
         return updatedCartItem;
     };
 
@@ -184,7 +189,7 @@ export class CartsService {
                 id: cartItemId,
             },
         });
-        await this.redis.delete(`cart:user:${userId}`);
+        await this.redis.incrementRevision(`cart:user:${userId}:revision`);
         return deletedCartItem;
     };
 }

@@ -1,24 +1,27 @@
 import { Controller, Get, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { OrderItemsService } from "./order-items.service.js";
-import type { OrderItem } from "../generated/prisma/browser.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
-import { StaffAuthGuard } from "../guards/staff-auth.guard.js";
-import { ApiBearerAuth, ApiForbiddenResponse } from "@nestjs/swagger";
+import { RolesGuard } from "../guards/roles.guard.js";
+import { Roles } from "../guards/roles.decorator.js";
+import { OrderItemResponseDto } from "./dtos/order-item-response.dto.js";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
-@UseGuards(JwtAuthGuard, StaffAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles("ADMIN", "STAFF")
 @ApiBearerAuth()
-@ApiForbiddenResponse({ description: "Requires ADMIN or STAFF" })
+@ApiTags("Order items")
 @Controller("order-items")
 export class OrderItemsController {
     constructor(private orderItemsService: OrderItemsService) {}
 
     @Get()
-    getOrderItems(): Promise<OrderItem[]> {
-        return this.orderItemsService.getOrderItems();
+    async getOrderItems(): Promise<OrderItemResponseDto[]> {
+        const items = await this.orderItemsService.getOrderItems();
+        return items.map((item) => new OrderItemResponseDto(item));
     }
 
     @Get(":id")
-    getOrderItemById(@Param("id", ParseIntPipe) orderItemId: number): Promise<OrderItem> {
-        return this.orderItemsService.getOrderItemsById(orderItemId);
+    async getOrderItemById(@Param("id", ParseIntPipe) orderItemId: number): Promise<OrderItemResponseDto> {
+        return new OrderItemResponseDto(await this.orderItemsService.getOrderItemsById(orderItemId));
     }
 }

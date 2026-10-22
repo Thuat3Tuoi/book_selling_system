@@ -75,9 +75,8 @@ services:
   seed-safe:
     build:
       context: ./backend
-      target: migrate
+      target: seed-safe
     restart: "no"
-    command: ["npm", "run", "prisma:seed:safe"]
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public

@@ -1,9 +1,8 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { BooksService } from "./books.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { BookSearchSyncService } from "../search/book-search-sync.service.js";
-import { BookStatus } from "../generated/prisma/enums.js";
 import { RedisService } from "../redis/redis.service.js";
+import { BookSearchSyncService } from "../search/book-search-sync.service.js";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 
 vi.mock("../generated/prisma/client.js", () => ({
@@ -25,7 +24,7 @@ const makeBook = (overrides: Record<string, unknown> = {}) => ({
     price: 150000,
     stockQuantity: 20,
     coverImageUrl: "https://example.com/clean-code.jpg",
-    status: BookStatus.ACTIVE,
+    status: "ACTIVE",
     ...overrides,
 });
 
@@ -34,6 +33,7 @@ describe("BooksService", () => {
 
     const prisma = {
         $transaction: vi.fn(),
+        outboxEvent: { create: vi.fn() },
         book: {
             create: vi.fn(),
             findMany: vi.fn(),
@@ -43,27 +43,27 @@ describe("BooksService", () => {
             updateMany: vi.fn(),
         },
     };
-    const searchSync = {
-        enqueue: vi.fn(),
-        syncNow: vi.fn(),
-    };
     const redis = {
         get: vi.fn(),
         set: vi.fn(),
         delete: vi.fn(),
-        deleteByPattern: vi.fn(),
+        deleteByPrefix: vi.fn(),
+        getRevision: vi.fn(),
+        incrementRevision: vi.fn(),
     };
+    const searchSync = { enqueue: vi.fn() };
 
     beforeEach(async () => {
         vi.resetAllMocks();
-        prisma.$transaction.mockImplementation((callback: (tx: typeof prisma) => unknown) => callback(prisma));
+        redis.getRevision.mockResolvedValue(0);
+        prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma));
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 BooksService,
                 { provide: PrismaService, useValue: prisma },
-                { provide: BookSearchSyncService, useValue: searchSync },
                 { provide: RedisService, useValue: redis },
+                { provide: BookSearchSyncService, useValue: searchSync },
             ],
         }).compile();
 
@@ -86,7 +86,7 @@ describe("BooksService", () => {
             coverImageUrl: "https://example.com/a.jpg",
         };
 
-        it("tạo sách ACTIVE, đồng bộ Meilisearch và xóa cache danh sách", async () => {
+        it("tạo sách ACTIVE và outbox trong cùng transaction, rồi xóa cache", async () => {
             const created = makeBook();
             prisma.book.create.mockResolvedValue(created);
 
@@ -94,20 +94,27 @@ describe("BooksService", () => {
 
             expect(result).toBe(created);
             expect(prisma.book.create).toHaveBeenCalledWith({
-                data: expect.objectContaining({ title: dto.title, isbn: dto.isbn, status: BookStatus.ACTIVE }),
+                data: expect.objectContaining({ title: dto.title, isbn: dto.isbn, status: "ACTIVE" }),
             });
-            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, created.id);
-            expect(searchSync.syncNow).toHaveBeenCalledWith(created.id);
-            expect(redis.deleteByPattern).toHaveBeenCalledWith("books:page:*");
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
+            expect(redis.incrementRevision).toHaveBeenCalledWith("books:revision");
         });
 
-        it("vẫn tạo được sách khi Meilisearch bị lỗi", async () => {
-            const created = makeBook();
-            prisma.book.create.mockResolvedValue(created);
-            searchSync.syncNow.mockRejectedValue(new Error("Meilisearch down"));
+        it("rollback thao tác sách khi không thể ghi outbox", async () => {
+            prisma.book.create.mockResolvedValue(makeBook());
+            prisma.outboxEvent.create.mockRejectedValue(new Error("DB error"));
+            await expect(service.createBook(dto)).rejects.toThrow("DB error");
+            expect(redis.incrementRevision).not.toHaveBeenCalled();
+        });
 
-            await expect(service.createBook(dto)).resolves.toBe(created);
-            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, created.id);
+        it("không xác nhận thao tác khi không thể lưu yêu cầu đồng bộ tìm kiếm", async () => {
+            prisma.book.create.mockResolvedValue(makeBook());
+            searchSync.enqueue.mockRejectedValue(new Error("DB sync queue error"));
+
+            await expect(service.createBook(dto)).rejects.toThrow("DB sync queue error");
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
+            expect(redis.incrementRevision).not.toHaveBeenCalled();
         });
     });
 
@@ -119,7 +126,7 @@ describe("BooksService", () => {
             const result = await service.getBooks(1, 10);
 
             expect(result).toBe(cached);
-            expect(redis.get).toHaveBeenCalledWith("books:page:1:limit:10");
+            expect(redis.get).toHaveBeenCalledWith("books:page:1:limit:10:rev:0");
             expect(prisma.book.findMany).not.toHaveBeenCalled();
         });
 
@@ -131,10 +138,10 @@ describe("BooksService", () => {
             const result = await service.getBooks(2, 10) as any;
 
             expect(prisma.book.findMany).toHaveBeenCalledWith(
-                expect.objectContaining({ where: { status: BookStatus.ACTIVE }, skip: 10, take: 10 })
+                expect.objectContaining({ where: { status: "ACTIVE" }, skip: 10, take: 10 })
             );
             expect(result.meta).toEqual({ page: 2, limit: 10, total: 25, totalPages: 3 });
-            expect(redis.set).toHaveBeenCalledWith("books:page:2:limit:10", result, 300);
+            expect(redis.set).toHaveBeenCalledWith("books:page:2:limit:10:rev:0", result, 300);
         });
     });
 
@@ -153,7 +160,7 @@ describe("BooksService", () => {
             prisma.book.findUnique.mockResolvedValue(book);
 
             await expect(service.getBookById(1)).resolves.toBe(book);
-            expect(redis.set).toHaveBeenCalledWith("book:1", book, 300);
+            expect(redis.set).toHaveBeenCalledWith("book:1:rev:0", book, 300);
         });
 
         it("ném NotFoundException khi sách không tồn tại", async () => {
@@ -165,7 +172,7 @@ describe("BooksService", () => {
 
         it("ném NotFoundException khi sách đã INACTIVE và không lưu cache", async () => {
             redis.get.mockResolvedValue(null);
-            prisma.book.findUnique.mockResolvedValue(makeBook({ status: BookStatus.INACTIVE }));
+            prisma.book.findUnique.mockResolvedValue(makeBook({ status: "INACTIVE" }));
 
             await expect(service.getBookById(1)).rejects.toBeInstanceOf(NotFoundException);
             expect(redis.set).not.toHaveBeenCalled();
@@ -178,26 +185,26 @@ describe("BooksService", () => {
             redis.get.mockResolvedValue(makeBook());
         });
 
-        it("cập nhật sách ACTIVE: đánh lại chỉ mục và xóa cache", async () => {
+        it("cập nhật sách ACTIVE: ghi sự kiện và xóa cache", async () => {
             const updated = makeBook({ title: "Clean Code 2nd" });
             prisma.book.update.mockResolvedValue(updated);
 
             await expect(service.updateBook(1, { title: "Clean Code 2nd" })).resolves.toBe(updated);
 
-            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, updated.id);
-            expect(searchSync.syncNow).toHaveBeenCalledWith(updated.id);
-            expect(redis.delete).toHaveBeenCalledWith("book:1");
-            expect(redis.deleteByPattern).toHaveBeenCalledWith("books:page:*");
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
+            expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
+            expect(redis.incrementRevision).toHaveBeenCalledWith("book:1:revision");
+            expect(redis.incrementRevision).toHaveBeenCalledWith("books:revision");
         });
 
-        it("chuyển sang INACTIVE: gỡ sách khỏi chỉ mục tìm kiếm", async () => {
-            const updated = makeBook({ status: BookStatus.INACTIVE });
+        it("chuyển sang INACTIVE: gửi sự kiện đồng bộ tìm kiếm", async () => {
+            const updated = makeBook({ status: "INACTIVE" });
             prisma.book.update.mockResolvedValue(updated);
 
-            await service.updateBook(1, { status: BookStatus.INACTIVE });
+            await service.updateBook(1, { status: "INACTIVE" });
 
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
             expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
-            expect(searchSync.syncNow).toHaveBeenCalledWith(1);
         });
 
         it("ném NotFoundException khi cập nhật sách không tồn tại", async () => {
@@ -210,20 +217,20 @@ describe("BooksService", () => {
     });
 
     describe("deleteBook", () => {
-        it("xóa mềm: đặt status INACTIVE, gỡ khỏi chỉ mục và xóa cache", async () => {
+        it("xóa mềm: đặt status INACTIVE, ghi outbox và xóa cache", async () => {
             redis.get.mockResolvedValue(makeBook());
-            prisma.book.update.mockResolvedValue(makeBook({ status: BookStatus.INACTIVE }));
+            prisma.book.update.mockResolvedValue(makeBook({ status: "INACTIVE" }));
 
             const result = await service.deleteBook(1);
 
             expect(prisma.book.update).toHaveBeenCalledWith({
                 where: { id: 1 },
-                data: { status: BookStatus.INACTIVE },
+                data: { status: "INACTIVE" },
             });
-            expect(result.status).toBe(BookStatus.INACTIVE);
+            expect(result.status).toBe("INACTIVE");
+            expect(prisma.outboxEvent.create).toHaveBeenCalledWith({ data: { topic: "book.changed", payload: { bookId: 1 } } });
             expect(searchSync.enqueue).toHaveBeenCalledWith(prisma, 1);
-            expect(searchSync.syncNow).toHaveBeenCalledWith(1);
-            expect(redis.delete).toHaveBeenCalledWith("book:1");
+            expect(redis.incrementRevision).toHaveBeenCalledWith("book:1:revision");
         });
     });
 
@@ -236,7 +243,7 @@ describe("BooksService", () => {
             await service.reduceBookStock(tx, 1, 3);
 
             expect(prisma.book.updateMany).toHaveBeenCalledWith({
-                where: { id: 1, status: BookStatus.ACTIVE, stockQuantity: { gte: 3 } },
+                where: { id: 1, status: "ACTIVE", stockQuantity: { gte: 3 } },
                 data: { stockQuantity: { decrement: 3 } },
             });
             expect(redis.delete).not.toHaveBeenCalled();
@@ -257,7 +264,7 @@ describe("BooksService", () => {
             await service.getLowStockBook();
 
             expect(prisma.book.findMany).toHaveBeenCalledWith({
-                where: { status: BookStatus.ACTIVE, stockQuantity: { lte: 10 } },
+                where: { status: "ACTIVE", stockQuantity: { lte: 10 } },
             });
         });
     });

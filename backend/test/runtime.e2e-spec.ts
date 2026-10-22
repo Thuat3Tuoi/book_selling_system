@@ -5,6 +5,7 @@ import { NotificationType, OrderStatus } from "../src/generated/prisma/enums.js"
 
 const baseUrl = process.env.E2E_BASE_URL;
 const samplePassword = process.env.E2E_SAMPLE_PASSWORD;
+const allowedOrigin = process.env.E2E_ALLOWED_ORIGIN ?? "http://localhost:31000";
 
 describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
     const api = () => request(baseUrl!);
@@ -75,9 +76,15 @@ describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
         const updatedList = await api().get("/books").expect(HttpStatus.OK);
         expect(Number(updatedList.body.data.find((item: { id: number }) => item.id === bookId).price)).toBe(130);
 
-        const search = await api().get("/search/books")
-            .query({ q: isbn }).expect(HttpStatus.OK);
-        expect(search.body.data.hits.some((item: { id: number }) => item.id === bookId)).toBe(true);
+        let searchable = false;
+        for (let attempt = 0; attempt < 40; attempt++) {
+            const search = await api().get("/search/books")
+                .query({ q: isbn }).expect(HttpStatus.OK);
+            searchable = search.body.data.hits.some((item: { id: number }) => item.id === bookId);
+            if (searchable) break;
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        expect(searchable).toBe(true);
 
         const added = await api().post("/carts/items")
             .set("Authorization", `Bearer ${customerA}`)
@@ -154,7 +161,7 @@ describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
             .expect(HttpStatus.FORBIDDEN);
         await api().post("/auth/refresh-token")
             .set("Cookie", refreshCookie)
-            .set("Origin", "http://localhost:31000")
+            .set("Origin", allowedOrigin)
             .expect(HttpStatus.CREATED);
-    }, 30_000);
+    }, 60_000);
 });

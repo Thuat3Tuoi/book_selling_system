@@ -1,3 +1,8 @@
+# Keep local configuration and credentials out of Git.
 .env
 .env.*
 !.env.example
+!.env.*.example
+
+# Local generated reports
+.gitleaks-*.json

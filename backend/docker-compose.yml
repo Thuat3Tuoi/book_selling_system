@@ -72,39 +72,19 @@ services:
         condition: service_healthy
     networks: [backend]
 
-  seed-safe:
-    profiles: [tools]
+  seed:
     build:
       context: .
-      target: migrate
+      target: seed
     restart: "no"
-    command: ["npm", "run", "prisma:seed:safe"]
     environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
+      NODE_ENV: ${NODE_ENV:-development}
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-false}
       SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:-}
-      SEED_SAMPLE_DATA: ${SEED_SAMPLE_DATA:-}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    networks: [backend]
-
-  search-reindex:
-    profiles: [tools]
-    build:
-      context: .
-      target: runtime
-    restart: "no"
-    command: ["node", "dist/search/reindex.script.js"]
-    environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
-      MEILISEARCH_HOST: http://meilisearch:7700
-      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY:?Set MEILISEARCH_API_KEY in .env}
     depends_on:
       migrate:
         condition: service_completed_successfully
-      meilisearch:
-        condition: service_healthy
     networks: [backend]
 
   backend:
@@ -113,10 +93,11 @@ services:
       target: runtime
     restart: unless-stopped
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: "3001"
       DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-bookstore}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}@rabbitmq:5672
@@ -128,7 +109,7 @@ services:
     ports:
       - "${BACKEND_PORT:-3001}:3001"
     depends_on:
-      migrate:
+      seed:
         condition: service_completed_successfully
       redis:
         condition: service_healthy

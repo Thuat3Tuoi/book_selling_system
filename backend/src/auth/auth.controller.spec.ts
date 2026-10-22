@@ -6,6 +6,7 @@ import { AuthController } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
 import { LocalAuthGuard } from "../guards/local-auth.guard.js";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard.js";
+import { ThrottlerModule } from "@nestjs/throttler";
 
 describe("Auth refresh HTTP boundary", () => {
     const rotateRefreshToken = vi.fn();
@@ -14,6 +15,7 @@ describe("Auth refresh HTTP boundary", () => {
 
     beforeAll(async () => {
         const module = await Test.createTestingModule({
+            imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }])],
             controllers: [AuthController],
             providers: [{ provide: AuthService, useValue: { rotateRefreshToken, assertCookieOrigin } }],
         })
@@ -26,7 +28,7 @@ describe("Auth refresh HTTP boundary", () => {
         await app.init();
     });
 
-    afterAll(async () => { await app.close(); });
+    afterAll(async () => { await app?.close(); });
     beforeEach(() => { vi.resetAllMocks(); });
 
     it("returns 400 for a missing token instead of an internal error", async () => {

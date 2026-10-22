@@ -26,7 +26,10 @@ export interface ApiErrorResponse {
   };
 }
 
-export type BookStatus = "ACTIVE" | "INACTIVE";
+export enum BookStatus {
+  ACTIVE = "ACTIVE",
+  INACTIVE = "INACTIVE",
+}
 
 export interface Book {
   id: number;
@@ -39,7 +42,13 @@ export interface Book {
   status: BookStatus;
 }
 
-export type OrderStatus = "PENDING" | "PAID" | "SHIPPING" | "COMPLETED" | "CANCELLED";
+export enum OrderStatus {
+  PENDING = "PENDING",
+  CONFIRMED = "CONFIRMED",
+  SHIPPING = "SHIPPING",
+  COMPLETED = "COMPLETED",
+  CANCELLED = "CANCELLED",
+}
 
 export interface OrderItem {
   id: number;

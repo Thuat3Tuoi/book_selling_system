@@ -72,6 +72,41 @@ services:
         condition: service_healthy
     networks: [backend]
 
+  seed-safe:
+    profiles: [tools]
+    build:
+      context: .
+      target: migrate
+    restart: "no"
+    command: ["npm", "run", "prisma:seed:safe"]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
+      SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:-}
+      SEED_SAMPLE_DATA: ${SEED_SAMPLE_DATA:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  search-reindex:
+    profiles: [tools]
+    build:
+      context: .
+      target: runtime
+    restart: "no"
+    command: ["node", "dist/search/reindex.script.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY:?Set MEILISEARCH_API_KEY in .env}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      meilisearch:
+        condition: service_healthy
+    networks: [backend]
+
   backend:
     build:
       context: .
@@ -81,6 +116,7 @@ services:
       PORT: "3001"
       DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-bookstore}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}@rabbitmq:5672

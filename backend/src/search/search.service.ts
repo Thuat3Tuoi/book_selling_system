@@ -3,6 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { Meilisearch, type Index } from "meilisearch";
 import type { Book } from '../generated/prisma/client.js';
 
+enum SearchHealthStatus {
+    AVAILABLE = "available",
+}
+
+enum SearchTaskStatus {
+    SUCCEEDED = "succeeded",
+}
+
 const BOOKS_INDEX = "books";
 
 export interface BookSearchDocument {
@@ -55,7 +63,7 @@ export class SearchService {
 
     async health(): Promise<void> {
         const result = await this.client.health();
-        if (result.status !== "available") {
+        if (result.status !== SearchHealthStatus.AVAILABLE) {
             throw new Error("Meilisearch unavailable");
         }
     }
@@ -111,11 +119,13 @@ export class SearchService {
     async indexBook(book: Book): Promise<void> {
         const documnent = this.toSearchDocument(book);
         const task = await this.index.addDocuments([documnent]);
+        await this.waitForSearchTask(task.taskUid);
         this.logger.log(`Dong bo sach id=${book.id} vao Meilisearch (taskUid=${task.taskUid})`);
     }
 
     async removeBookFromIndex(bookId: number): Promise<void> {
         const task = await this.index.deleteDocument(bookId);
+        await this.waitForSearchTask(task.taskUid);
         this.logger.log(`Xoa sach id=${bookId} khoi Meilisearch (taskUid=${task.taskUid})`);
     }
 
@@ -124,7 +134,8 @@ export class SearchService {
         const limit = options.limit ?? 20;
         const offset = (page - 1) * limit;
 
-        const filter = options.category ? `category = "${options.category}"` : undefined;
+        const escapedCategory = options.category?.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const filter = escapedCategory ? `category = "${escapedCategory}"` : undefined;
 
         const result = await this.index.search<BookSearchDocument>(query, {
             limit,
@@ -143,11 +154,22 @@ export class SearchService {
     }
 
     async reindexAll(books: Book[]): Promise<void> {
+        // A complete rebuild also removes stale books that became INACTIVE while search was offline.
+        const cleared = await this.index.deleteAllDocuments();
+        await this.waitForSearchTask(cleared.taskUid);
         const BATCH = 1000;
         for (let i = 0; i < books.length; i += BATCH) {
             const docs = books.slice(i, i + BATCH).map((b) => this.toSearchDocument(b));
             const task = await this.index.addDocuments(docs);
+            await this.waitForSearchTask(task.taskUid);
             this.logger.log(`Batch ${i / BATCH + 1}: taskUid=${task.taskUid}`);
+        }
+    }
+
+    private async waitForSearchTask(taskUid: number): Promise<void> {
+        const result = await this.client.tasks.waitForTask(taskUid, { timeout: 10_000 });
+        if (result.status !== SearchTaskStatus.SUCCEEDED) {
+            throw new Error(`Meilisearch task ${taskUid} ended with status ${result.status}`);
         }
     }
 }

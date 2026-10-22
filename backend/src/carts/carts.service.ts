@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 
 import { PrismaService } from "../prisma/prisma.service.js";
 
@@ -9,6 +9,7 @@ import type { AddToCartDto } from "./dtos/cart-add-request.dto.js";
 import { UpdateCartItemDto } from "./dtos/cart-update-request.dto.js";
 
 import { RedisService } from "../redis/redis.service.js";
+import { BookStatus } from "../generated/prisma/enums.js";
 
 @Injectable()
 export class CartsService {
@@ -72,6 +73,15 @@ export class CartsService {
     addToCart = async (userId: number, addToCartDto: AddToCartDto): Promise<CartItem> => {
         const cart = await this.getCartById(userId);
 
+        const book = await this.prismaService.book.findUnique({
+            where: { id: addToCartDto.bookId },
+        });
+
+        if (!book || book.status !== BookStatus.ACTIVE) {
+            throw new NotFoundException("Không tìm thấy sách hoặc sách không còn hoạt động");
+        }
+
+        
         const existingItem = await this.prismaService.cartItem.findUnique({
             where: {
                 cartId_bookId: {
@@ -80,6 +90,12 @@ export class CartsService {
                 },
             },
         });
+        
+        const newQuantity = (existingItem?.quantity ?? 0) + addToCartDto.quantity;
+
+        if (newQuantity > book.stockQuantity) {
+            throw new BadRequestException(`Chỉ còn ${book.stockQuantity} cuốn trong kho`);
+        }
 
         let cartItem: CartItem;
 
@@ -109,6 +125,27 @@ export class CartsService {
     };
 
     // =========================
+    // HELPER: chỉ lấy cart item thuộc giỏ của userId
+    // =========================
+
+    private findOwnedCartItem = async (userId: number, cartItemId: number) => {
+        const cartItem = await this.prismaService.cartItem.findFirst({
+            where: {
+                id: cartItemId,
+                cart: { userId },
+            },
+            include: { book: true },
+        });
+
+        // Trả 404 (không phải 403) để không lộ việc mục giỏ của người khác có tồn tại
+        if (!cartItem) {
+            throw new NotFoundException("Cart item not found");
+        }
+
+        return cartItem;
+    };
+
+    // =========================
     // UPDATE QUANTITY
     // =========================
 
@@ -117,14 +154,10 @@ export class CartsService {
         cartItemId: number,
         updateCartItemDto: UpdateCartItemDto
     ): Promise<CartItem> => {
-        const cartItem = await this.prismaService.cartItem.findUnique({
-            where: {
-                id: cartItemId,
-            },
-        });
+        const cartItem = await this.findOwnedCartItem(userId, cartItemId);
 
-        if (!cartItem) {
-            throw new NotFoundException("Cart item not found");
+        if (updateCartItemDto.quantity > cartItem.book.stockQuantity) {
+            throw new BadRequestException(`Chỉ còn ${cartItem.book.stockQuantity} cuốn trong kho`);
         }
 
         const updatedCartItem = await this.prismaService.cartItem.update({
@@ -135,10 +168,7 @@ export class CartsService {
                 quantity: updateCartItemDto.quantity,
             },
         });
-
-        // DB thay đổi -> xóa cache
         await this.redis.delete(`cart:user:${userId}`);
-
         return updatedCartItem;
     };
 
@@ -147,25 +177,14 @@ export class CartsService {
     // =========================
 
     removeCartItem = async (userId: number, cartItemId: number): Promise<CartItem> => {
-        const cartItem = await this.prismaService.cartItem.findUnique({
-            where: {
-                id: cartItemId,
-            },
-        });
-
-        if (!cartItem) {
-            throw new NotFoundException("Cart item not found");
-        }
+        await this.findOwnedCartItem(userId, cartItemId);
 
         const deletedCartItem = await this.prismaService.cartItem.delete({
             where: {
                 id: cartItemId,
             },
         });
-
-        // DB thay đổi -> xóa cache
         await this.redis.delete(`cart:user:${userId}`);
-
         return deletedCartItem;
     };
 }

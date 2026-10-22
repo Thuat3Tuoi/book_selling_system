@@ -5,13 +5,30 @@ import { useState } from "react";
 import type { Book } from "@/lib/types";
 import Image from "next/image";
 import { formatPrice } from "@/lib/format";
+import { useCartStore } from "@/stores/cart.store";
+
+enum AddToCartStatus {
+  IDLE = "idle",
+  LOADING = "loading",
+  DONE = "done",
+  ERROR = "error",
+}
 
 export default function BookCard({ book }: { book: Book }) {
-  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">(
-    "idle"
-  );
+  const [status, setStatus] = useState<AddToCartStatus>(AddToCartStatus.IDLE);
 
   const outOfStock = book.stockQuantity <= 0;
+  const addToCart = useCartStore((state) => state.addToCart);
+
+  const handleAdd = async () => {
+    setStatus(AddToCartStatus.LOADING);
+    try {
+      await addToCart(book.id, 1);
+      setStatus(AddToCartStatus.DONE);
+    } catch {
+      setStatus(AddToCartStatus.ERROR);
+    }
+  };
 
 
   return (
@@ -49,20 +66,20 @@ export default function BookCard({ book }: { book: Book }) {
             {formatPrice(book.price)}
           </span>
           <button
-            // onClick={handleAdd}
-            disabled={outOfStock || status === "loading"}
+            onClick={handleAdd}
+            disabled={outOfStock || status === AddToCartStatus.LOADING}
             className="rounded-full bg-[#2F4B3C] px-3 py-1.5 text-xs font-medium text-[#FAF6EE] transition-colors hover:bg-[#26392E] disabled:cursor-not-allowed disabled:bg-[#1F2321]/20"
           >
             {outOfStock
               ? "Hết hàng"
-              : status === "loading"
+              : status === AddToCartStatus.LOADING
                 ? "Đang thêm..."
-                : status === "done"
+                : status === AddToCartStatus.DONE
                   ? "Đã thêm ✓"
                   : "Thêm vào giỏ"}
           </button>
         </div>
-        {status === "error" && (
+        {status === AddToCartStatus.ERROR && (
           <p className="text-xs text-red-600">Có lỗi, thử lại nhé.</p>
         )}
       </div>

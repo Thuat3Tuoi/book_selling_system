@@ -1,6 +1,8 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import type { Response } from "express";
+import type { CookieOptions, Request, Response } from "express";
+import { ConfigService } from "@nestjs/config";
+import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service.js";
 
 import { CreateUserDto } from "../user/dto/create-user.dto.js";
@@ -11,7 +13,8 @@ export class AuthService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly jwtService: JwtService,
-        private readonly userService: UserService
+        private readonly userService: UserService,
+        private readonly configService: ConfigService,
     ) {}
 
     async register(dto: CreateUserDto) {
@@ -35,6 +38,7 @@ export class AuthService {
         const refreshToken = await this.jwtService.signAsync(
             {
                 sub: user.id,
+                jti: randomUUID(),
             },
             {
                 expiresIn: "7d",
@@ -52,12 +56,7 @@ export class AuthService {
         });
 
 
-        res?.cookie("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        });
+        res?.cookie("refreshToken", refreshToken, this.refreshCookieOptions());
 
         return {
             accessToken,
@@ -79,6 +78,39 @@ export class AuthService {
             return this.userService.verifyRefreshToken(ref, decode.sub);
         } catch {
             return false;
+        }
+    }
+
+    async rotateRefreshToken(ref: string, res: Response) {
+        const user = await this.verifyRefreshToken(ref);
+        if (!user) return null;
+
+        const revoked = await this.prisma.session.deleteMany({
+            where: { ref, userId: user.id },
+        });
+        if (revoked.count !== 1) return null;
+
+        return this.login(user, res);
+    }
+
+    refreshCookieOptions(): CookieOptions {
+        const production = this.configService.get<string>("NODE_ENV") === "production";
+        return {
+            httpOnly: true,
+            secure: production,
+            sameSite: production ? "none" : "lax",
+            path: "/auth",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        };
+    }
+
+    assertCookieOrigin(req: Request): void {
+        if (this.configService.get<string>("NODE_ENV") !== "production" || !req.cookies?.refreshToken) return;
+        const origin = req.get("origin");
+        const allowed = (this.configService.get<string>("CORS_ORIGINS") ?? "")
+            .split(",").map((value) => value.trim()).filter(Boolean);
+        if (!origin || !allowed.includes(origin)) {
+            throw new ForbiddenException("Origin not allowed for cookie authentication");
         }
     }
 

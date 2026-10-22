@@ -19,10 +19,11 @@ import { CronJobModule } from "./infrastructure/cron-job/cron-job.module.js";
 import { SearchModule } from './search/search.module.js';
 import { RedisModule } from "./redis/redis.module.js";
 import { HealthController } from "./health.controller.js";
+import { validateEnvironment } from "./config/environment.js";
 
 @Module({
     imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
+        ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
         PrismaModule,
         OrdersModule,
         NotificationsModule,

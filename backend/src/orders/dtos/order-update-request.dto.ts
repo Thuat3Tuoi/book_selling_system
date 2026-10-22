@@ -1,3 +1,5 @@
+import { IsString, MinLength } from "class-validator";
 export class OrderUpdateRequest {
-    shippingAddress?: string;
+    @IsString() @MinLength(10)
+    shippingAddress!: string;
 }

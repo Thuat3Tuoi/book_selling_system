@@ -5,6 +5,7 @@ import { TestingModule, Test } from "@nestjs/testing";
 import { AppModule } from "../src/app.module.js";
 import request from "supertest";
 import * as bcrypt from "bcrypt";
+import { RoleName } from "../src/generated/prisma/enums.js";
 
 
 
@@ -46,7 +47,7 @@ describe("Auth (e2e)", () => {
                 passwordHash: passwordHash,
                 firstName: "Test",
                 lastName: "Login",
-                roleId: 2,
+                role: { connect: { roleName: RoleName.CUSTOMER } },
             },
         });
     });
@@ -83,13 +84,14 @@ describe("Auth (e2e)", () => {
                 });
         });
 
-        it("roleID mac dinh = 2 (CUSTOMER) khi tao user khong can truyen role", async () => {
+        it("register assigns the CUSTOMER role without relying on its numeric ID", async () => {
             const createdUer = await prisma.user.findUnique({
                 where: { email: registerEmail },
+                include: { role: true },
             });
 
             expect(createdUer).not.toBeNull();
-            expect(createdUer?.roleId).toBe(2);
+            expect(createdUer?.role.roleName).toBe(RoleName.CUSTOMER);
         })
 
         it("409 - email da ton tai", () => {

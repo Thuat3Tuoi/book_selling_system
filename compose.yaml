@@ -82,6 +82,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-bookstore}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-bookstore}?schema=public
       SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:?Set SEED_DEFAULT_PASSWORD in .env}
       SEED_SAMPLE_DATA: "YES"
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -71,6 +71,9 @@ model Book {
   cartItems CartItem[]
 
   orderItems OrderItem[]
+  @@index([status, createdAt, id])
+  @@index([category, status])
+  @@index([author])
 }
 
 model Cart {
@@ -94,6 +97,8 @@ model CartItem {
   quantity Int @default(1)
 
   @@unique([cartId, bookId])
+
+  @@index([bookId])
 }
 
 model Order {
@@ -111,6 +116,8 @@ model Order {
   createdAt DateTime @default(now())
 
   orderItems OrderItem[]
+  @@index([userId, createdAt, id])
+  @@index([status, createdAt])
 }
 
 model OrderItem {
@@ -127,6 +134,8 @@ model OrderItem {
   quantity Int @default(1)
 
   totalPrice Decimal @db.Decimal(10, 2)
+  @@index([orderId])
+  @@index([bookId])
 }
 
 model Notification {
@@ -142,6 +151,7 @@ model Notification {
   status Boolean @default(true)
 
   createdAt DateTime @default(now())
+   @@index([userId, status, createdAt])
 }
 
 enum OrderStatus {

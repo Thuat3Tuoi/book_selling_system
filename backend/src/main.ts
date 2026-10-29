@@ -6,6 +6,7 @@ import { ValidationPipe } from "@nestjs/common";
 import cookieParser from "cookie-parser";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { allowedOrigins } from "./config/environment.js";
+import { describeResponseEnvelopes } from "./docs/openapi-responses.js";
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
@@ -52,6 +53,7 @@ async function bootstrap() {
         .setVersion("1.0")
         .addBearerAuth()
         .build());
+    describeResponseEnvelopes(document);
     SwaggerModule.setup("api/docs", app, document);
     await app.listen(process.env.PORT ?? 3001);
 }

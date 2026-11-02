@@ -3,195 +3,175 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-
+import { api } from "@/lib/api";
+import type { ApiResponse, Book } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
-import { useBookStore } from "@/stores/product.store";
-import { useCartStore } from "@/stores/cart.store";
-import Image from "next/image";
+import { categoryHref } from "@/lib/catalog";
+import BookCover from "@/components/BookCover";
+import AddToCartBox from "@/components/AddToCartBox";
+import EmptyState from "@/components/EmptyState";
+import Icon from "@/components/Icon";
 
-export default function ProductDetailPage() {
-  const params = useParams();
-  const id = Number(params.id);
-
-  const { selectedBook, loading, getBook } = useBookStore();
-  const { addToCart } = useCartStore();
-
-  const [quantity, setQuantity] = useState(1);
-  const [message, setMessage] = useState("");
-  const [adding, setAdding] = useState(false);
-
+function BookDetail({ id }: { id: number }) {
+  const [result, setResult] = useState<{ book: Book | null; loading: boolean }>(
+    { book: null, loading: true },
+  );
   useEffect(() => {
-    if (Number.isInteger(id)) {
-      getBook(id);
-    }
-  }, [id, getBook]);
-
-  // Giảm số lượng
-  const handleDecrease = () => {
-    setQuantity((current) => Math.max(1, current - 1));
-  };
-
-  // Tăng số lượng
-  const handleIncrease = () => {
-    if (!selectedBook) return;
-
-    setQuantity((current) => Math.min(selectedBook.stockQuantity, current + 1));
-  };
-
-  // Thêm vào giỏ hàng
-  const handleAddToCart = async () => {
-    if (!selectedBook) return;
-
-    try {
-      setAdding(true);
-      setMessage("");
-
-      // POST /cart/items
-      await addToCart(selectedBook.id, quantity);
-
-      setMessage(
-        `Đã thêm ${quantity} cuốn "${selectedBook.title}" vào giỏ hàng.`,
-      );
-    } catch (error) {
-      console.error("Không thể thêm sách vào giỏ hàng:", error);
-
-      setMessage("Không thể thêm sách vào giỏ hàng.");
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  // Loading
-  if (loading) {
+    if (!Number.isInteger(id) || id <= 0) return;
+    const controller = new AbortController();
+    api
+      .get<ApiResponse<Book>>(`/books/${id}`, {
+        signal: controller.signal,
+        timeout: 12000,
+      })
+      .then((response) => {
+        if (!controller.signal.aborted)
+          setResult({ book: response.data.data, loading: false });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setResult({ book: null, loading: false });
+      });
+    return () => controller.abort();
+  }, [id]);
+  if (!Number.isInteger(id) || id <= 0 || (!result.loading && !result.book))
     return (
-      <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
-        <p className="text-[#1F2321]/60">Đang tải thông tin sách...</p>
-      </div>
-    );
-  }
-
-  // Không tìm thấy sách
-  if (!selectedBook) {
-    return (
-      <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
-        <Link
+      <div className="page-shell py-16">
+        <EmptyState
+          title="Không tìm thấy cuốn sách này"
+          description="Sách có thể đang được cập nhật hoặc đã ngừng bán. Bạn thử ghé những ngăn sách khác nhé."
           href="/products"
-          className="text-sm text-[#1F2321]/60 hover:text-[#2F4B3C]"
-        >
-          ← Quay lại danh sách sách
-        </Link>
-
-        <p className="mt-6 text-[#1F2321]/60">Không tìm thấy sách.</p>
+          action="Quay lại tủ sách"
+        />
       </div>
     );
-  }
-
-  return (
-    <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
-      {/* Back */}
-      <Link
-        href="/products"
-        className="text-sm text-[#1F2321]/60 hover:text-[#2F4B3C]"
+  if (result.loading || !result.book)
+    return (
+      <div
+        className="page-shell grid animate-pulse gap-10 py-12 md:grid-cols-2"
+        aria-label="Đang tải thông tin sách"
       >
-        ← Quay lại danh sách sách
-      </Link>
-
-      {/* Product detail */}
-      <div className="mt-6 grid gap-10 sm:grid-cols-[280px_1fr]">
-        {/* Book cover */}
-        <div className="flex aspect-[3/4] items-center justify-center rounded-sm bg-[#EFE9DA] px-6 text-center">
-          {/* <span className="font-serif text-lg leading-snug text-[#1F2321]/70"> */}
-          {selectedBook.coverImageUrl ? <Image
-                        width={200}
-                        height={300}
-                        src={selectedBook.coverImageUrl}
-                        alt={`Bìa sách ${selectedBook.title}`}
-                        className="max-h-full max-w-full object-contain"
-                      /> : <span>Không có bìa sách</span>}
-          {/* </span> */}
+        <div className="aspect-square rounded-3xl bg-paper" />
+        <div className="space-y-6 pt-6">
+          <div className="h-4 w-1/3 rounded bg-line" />
+          <div className="h-12 w-full rounded bg-line" />
+          <div className="h-12 w-3/4 rounded bg-line" />
+          <div className="h-8 w-1/3 rounded bg-line" />
         </div>
-
-        {/* Information */}
-        <div className="flex flex-col gap-4">
-          <div>
-            <h1 className="font-serif text-3xl font-medium text-[#1F2321]">
-              {selectedBook.title}
-            </h1>
-
-            <p className="mt-1 text-[#1F2321]/60">{selectedBook.author}</p>
-          </div>
-
-          {/* Price */}
-          <p className="text-2xl font-medium text-[#2F4B3C]">
-            {formatPrice(selectedBook.price)}
+      </div>
+    );
+  const book = result.book;
+  const stock = book.stockQuantity ?? 0;
+  return (
+    <div className="page-shell pt-8 pb-16 lg:pb-20">
+      <nav
+        aria-label="Đường dẫn"
+        className="mb-8 flex items-center gap-2 overflow-hidden text-xs text-muted"
+      >
+        <Link href="/" className="shrink-0 hover:text-brand">
+          Trang chủ
+        </Link>
+        <span>/</span>
+        <Link href="/products" className="shrink-0 hover:text-brand">
+          Tủ sách
+        </Link>
+        <span>/</span>
+        <span className="truncate text-brand">{book.title}</span>
+      </nav>
+      <div className="grid gap-9 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16">
+        <div className="relative flex aspect-[1/1.08] items-center justify-center overflow-hidden rounded-3xl bg-paper p-12 sm:p-16">
+          <div className="absolute size-[75%] rounded-full bg-[#e4e8db]" />
+          <BookCover
+            book={book}
+            priority
+            className="relative z-10 h-full max-w-[80%] -rotate-3 transition-transform duration-500 hover:rotate-0"
+          />
+          <span className="absolute right-5 bottom-5 z-20 flex items-center gap-2 rounded-full bg-white/85 px-3 py-2 text-[10px] text-brand">
+            <Icon name="book" className="size-3.5" />
+            Một thế giới trong từng trang sách
+          </span>
+        </div>
+        <div className="self-center">
+          <Link
+            href={book.category ? categoryHref(book.category) : "/products"}
+            className="mb-5 inline-block rounded-full bg-sage px-3.5 py-1.5 text-[11px] font-medium text-brand"
+          >
+            {book.category ?? "Tủ sách chọn lọc"}
+          </Link>
+          <h1 className="font-serif text-3xl leading-[1.3] tracking-tight sm:text-4xl">
+            {book.title}
+          </h1>
+          <p className="mt-4 text-sm text-muted">
+            Một cuốn sách của{" "}
+            <span className="font-medium text-ink">
+              {book.author ?? "tác giả đang cập nhật"}
+            </span>
           </p>
-
-          {/* Stock */}
-          <p className="text-sm text-[#1F2321]/60">
-            {selectedBook.stockQuantity > 0
-              ? `Còn ${selectedBook.stockQuantity} cuốn trong kho`
-              : "Hết hàng"}
-          </p>
-
-          {/* Quantity + Add to cart */}
-          <div className="mt-2 flex items-center gap-3">
-            {/* Quantity */}
-            <div className="flex items-center border border-[#E4DCC8]">
-              <button
-                type="button"
-                onClick={handleDecrease}
-                disabled={quantity <= 1 || adding}
-                className="px-4 py-2 text-[#1F2321]/60 hover:bg-[#EFE9DA] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                −
-              </button>
-
-              <span className="min-w-10 text-center">{quantity}</span>
-
-              <button
-                type="button"
-                onClick={handleIncrease}
-                disabled={quantity >= selectedBook.stockQuantity || adding}
-                className="px-4 py-2 text-[#1F2321]/60 hover:bg-[#EFE9DA] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                +
-              </button>
-            </div>
-
-            {/* Add to cart */}
-            <button
-              type="button"
-              onClick={handleAddToCart}
-              disabled={selectedBook.stockQuantity <= 0 || adding}
-              className="rounded-sm bg-[#2F4B3C] px-6 py-2.5 text-sm text-white hover:bg-[#243c30] disabled:cursor-not-allowed disabled:opacity-50"
+          <div className="my-7 flex flex-wrap items-center justify-between gap-4 border-y border-line py-6">
+            <span className="text-3xl font-semibold tracking-tight text-brand">
+              {formatPrice(book.price)}
+            </span>
+            <span
+              className={`flex items-center gap-2 text-xs ${stock > 0 ? "text-brand" : "text-muted"}`}
             >
-              {adding ? "Đang thêm..." : "Thêm vào giỏ hàng"}
-            </button>
+              <span
+                className={`size-1.5 rounded-full ${stock > 0 ? "bg-brand" : "bg-muted"}`}
+              />
+              {stock > 0 ? `Sẵn sàng trên tủ · ${stock} cuốn` : "Tạm hết hàng"}
+            </span>
           </div>
-
-          {/* Message */}
-          {message && (
-            <div className="flex items-center justify-between rounded-sm bg-[#EFE9DA] px-4 py-3 text-sm text-[#2F4B3C]">
-              <span>{message}</span>
-
-              <Link href="/orders" className="font-medium hover:underline">
-                Xem giỏ hàng →
-              </Link>
-            </div>
-          )}
-
-          {/* Description */}
-          <div className="mt-4 border-t border-[#E4DCC8] pt-4">
-            <h2 className="mb-2 font-serif text-lg font-medium text-[#1F2321]">
-              Giới thiệu
-            </h2>
-
-            <p className="whitespace-pre-line text-[#1F2321]/80">
-              {selectedBook.description}
+          <p className="mb-4 text-xs font-medium text-muted">
+            Số lượng bạn muốn mang về
+          </p>
+          <AddToCartBox key={book.id} book={book} />
+          <div className="mt-7 grid grid-cols-2 gap-4 border-t border-line pt-6 text-xs text-muted">
+            <span className="flex items-center gap-2">
+              <Icon name="package" className="size-4 text-brand" />
+              Đặt hàng trực tuyến
+            </span>
+            <span className="flex items-center gap-2">
+              <Icon name="shield" className="size-4 text-brand" />
+              Theo dõi trong tài khoản
+            </span>
+          </div>
+          {book.isbn && (
+            <p className="mt-5 text-[11px] tracking-wide text-muted">
+              ISBN: {book.isbn}
             </p>
-          </div>
+          )}
+        </div>
+      </div>
+      <div className="mt-12 grid gap-8 border-t border-line pt-10 lg:mt-16 lg:grid-cols-[1.5fr_1fr] lg:gap-16">
+        <div>
+          <p className="eyebrow mb-3">Lật mở những trang đầu</p>
+          <h2 className="mb-5 font-serif text-2xl">Về cuốn sách này</h2>
+          <p className="whitespace-pre-line text-sm leading-8 text-muted">
+            {book.description ||
+              "Nội dung giới thiệu đang được bổ sung. Hãy khám phá cuốn sách qua tên tác giả và thể loại yêu thích của bạn."}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-sage/70 p-7">
+          <Icon name="leaf" className="mb-4 size-6 text-brand" />
+          <p className="font-serif text-2xl leading-relaxed text-brand">
+            Đọc một cuốn sách,
+            <br />
+            gặp một phiên bản mới của mình.
+          </p>
+          <Link
+            href="/products"
+            className="mt-5 flex items-center gap-3 text-xs font-medium text-brand"
+          >
+            Khám phá thêm những cuốn sách khác
+            <Icon name="arrow" className="size-4" />
+          </Link>
         </div>
       </div>
     </div>
   );
+}
+
+export default function ProductDetailPage() {
+  const params = useParams<{ id: string }>();
+  const id = Number(params.id);
+  return <BookDetail key={params.id} id={id} />;
 }

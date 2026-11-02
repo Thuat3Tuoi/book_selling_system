@@ -1,164 +1,214 @@
 "use client";
-import { z } from "zod";
+
+import Link from "next/link";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-
+import { z } from "zod";
 import { useAuthStore } from "@/stores/auth.store";
+import { notify } from "@/stores/notification.store";
+import { errorMessage } from "@/lib/errors";
+import AuthShell from "@/components/AuthShell";
+import Icon from "@/components/Icon";
 
-import Link from "next/link";
-
-export const registerSchema = z.object({
-  firstName: z.string().trim().min(1, "Tên không được để trống"),
-  lastName: z.string().trim().min(1, "Họ không được để trống"),
-  email: z.string().trim().email("Email không hợp lệ"),
-  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
+const schema = z.object({
+  firstName: z.string().trim().min(1, "Bạn điền tên nhé."),
+  lastName: z.string().trim().min(1, "Bạn điền họ nhé."),
+  email: z.string().trim().email("Địa chỉ email chưa hợp lệ."),
+  password: z.string().min(6, "Mật khẩu cần ít nhất 6 ký tự."),
   phoneNumber: z.string().trim().optional(),
   address: z.string().trim().optional(),
 });
-
-export type RegisterData = z.infer<typeof registerSchema>;
-
-
+type RegisterData = z.infer<typeof schema>;
 
 export default function RegisterPage() {
   const router = useRouter();
-
   const registerUser = useAuthStore((state) => state.register);
-  const isLoading = useAuthStore((state) => state.loading);
-
+  const loading = useAuthStore((state) => state.loading);
+  const [error, setError] = useState("");
+  const [visible, setVisible] = useState(false);
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<RegisterData>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: {
-      firstName: "",
-      lastName: "",
-      email: "",
-      password: "",
-      phoneNumber: "",
-      address: "",
-    },
-  });
+  } = useForm<RegisterData>({ resolver: zodResolver(schema) });
 
-  const onSubmit = async (data: RegisterData) => {
+  async function submit(data: RegisterData) {
+    setError("");
     try {
-      await registerUser(data);
-
-      // Đăng ký thành công
-      router.push("/login");
-    } catch {
-      // Error đã được Zustand lưu
+      await registerUser({
+        ...data,
+        phoneNumber: data.phoneNumber || undefined,
+        address: data.address || undefined,
+      });
+      notify.success("Tạo tài khoản thành công. Bạn có thể đăng nhập ngay.");
+      router.push("/login?registered=1");
+    } catch (error) {
+      const message = errorMessage(
+        error,
+        "Chưa thể tạo tài khoản. Bạn thử lại sau một chút nhé.",
+      );
+      setError(message);
+      notify.error(message);
     }
-  };
+  }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-[#FAF6EE] px-6 py-16">
-      <div className="w-full max-w-sm">
-        <h1 className="font-serif text-2xl font-medium text-[#1F2321]">
-          Tạo tài khoản
-        </h1>
-
-        <p className="mt-1 text-sm text-[#1F2321]/60">
-          Đã có tài khoản?{" "}
-          <Link href="/login" className="text-[#2F4B3C] hover:underline">
-            Đăng nhập
-          </Link>
-        </p>
-
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className="mt-8 flex flex-col gap-4"
-        >
-          {/* Họ + Tên */}
-          <div className="flex gap-3">
-            <label className="flex flex-1 flex-col gap-1.5 text-sm">
-              Họ
+    <AuthShell register>
+      <p className="eyebrow mb-3">Một hành trình mới bắt đầu</p>
+      <h1 className="font-serif text-3xl tracking-tight sm:text-4xl">
+        Ghé vào, bạn nhé.
+      </h1>
+      <p className="mt-3 text-sm leading-7 text-muted">
+        Tạo một góc riêng cho những cuốn sách của bạn.
+      </p>
+      <form
+        onSubmit={handleSubmit(submit)}
+        noValidate
+        className="mt-7 space-y-4"
+      >
+        {error && (
+          <p role="alert" className="notice-error">
+            {error}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          {(
+            [
+              {
+                name: "lastName",
+                label: "Họ",
+                autoComplete: "family-name",
+                placeholder: "Nguyễn",
+              },
+              {
+                name: "firstName",
+                label: "Tên",
+                autoComplete: "given-name",
+                placeholder: "An",
+              },
+            ] as const
+          ).map((field) => (
+            <label key={field.name} className="field-label">
+              {field.label}
               <input
-                {...register("lastName")}
-                className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
+                {...register(field.name)}
+                autoComplete={field.autoComplete}
+                placeholder={field.placeholder}
+                aria-invalid={Boolean(errors[field.name])}
+                aria-describedby={
+                  errors[field.name] ? `${field.name}-error` : undefined
+                }
+                className="field"
               />
-              {errors.lastName && (
-                <span className="text-xs text-red-600">
-                  {errors.lastName.message}
+              {errors[field.name] && (
+                <span
+                  id={`${field.name}-error`}
+                  className="text-xs font-normal text-red-600"
+                >
+                  {errors[field.name]?.message}
                 </span>
               )}
             </label>
-
-            <label className="flex flex-1 flex-col gap-1.5 text-sm">
-              Tên
-              <input
-                {...register("firstName")}
-                className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
-              />
-              {errors.firstName && (
-                <span className="text-xs text-red-600">
-                  {errors.firstName.message}
-                </span>
-              )}
-            </label>
-          </div>
-
-          {/* Email */}
-          <label className="flex flex-col gap-1.5 text-sm">
-            Email
+          ))}
+        </div>
+        <label className="field-label">
+          Địa chỉ email
+          <input
+            type="email"
+            autoComplete="email"
+            placeholder="ban@vidu.com"
+            {...register("email")}
+            aria-invalid={Boolean(errors.email)}
+            aria-describedby={errors.email ? "register-email-error" : undefined}
+            className="field"
+          />
+          {errors.email && (
+            <span
+              id="register-email-error"
+              className="text-xs font-normal text-red-600"
+            >
+              {errors.email.message}
+            </span>
+          )}
+        </label>
+        <label className="field-label">
+          Mật khẩu
+          <div className="relative">
             <input
-              type="email"
-              {...register("email")}
-              placeholder="ban@vidu.com"
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
-            />
-            {errors.email && (
-              <span className="text-xs text-red-600">
-                {errors.email.message}
-              </span>
-            )}
-          </label>
-
-          {/* Password */}
-          <label className="flex flex-col gap-1.5 text-sm">
-            Mật khẩu
-            <input
-              type="password"
-              {...register("password")}
+              type={visible ? "text" : "password"}
+              autoComplete="new-password"
               placeholder="Ít nhất 6 ký tự"
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
+              {...register("password")}
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={
+                errors.password ? "register-password-error" : undefined
+              }
+              className="field pr-12"
             />
-            {errors.password && (
-              <span className="text-xs text-red-600">
-                {errors.password.message}
-              </span>
-            )}
-          </label>
-
-          {/* Phone */}
-          <label className="flex flex-col gap-1.5 text-sm">
-            Số điện thoại (không bắt buộc)
-            <input
-              {...register("phoneNumber")}
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
-            />
-          </label>
-
-          {/* Address */}
-          <label className="flex flex-col gap-1.5 text-sm">
-            Địa chỉ (không bắt buộc)
-            <input
-              {...register("address")}
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="mt-2 rounded-full bg-[#2F4B3C] px-4 py-2.5 text-sm font-medium text-[#FAF6EE] transition-colors hover:bg-[#26392E] disabled:opacity-60"
-          >
-            {isLoading ? "Đang tạo..." : "Tạo tài khoản"}
-          </button>
-        </form>
-      </div>
-    </div>
+            <button
+              type="button"
+              onClick={() => setVisible(!visible)}
+              aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              aria-pressed={visible}
+              className="absolute top-1 right-1 flex size-10 items-center justify-center rounded-lg text-muted hover:text-brand"
+            >
+              <Icon name="eye" className="size-4.5" />
+            </button>
+          </div>
+          {errors.password && (
+            <span
+              id="register-password-error"
+              className="text-xs font-normal text-red-600"
+            >
+              {errors.password.message}
+            </span>
+          )}
+        </label>
+        <label className="field-label">
+          <span>
+            Số điện thoại{" "}
+            <span className="font-normal text-muted">(không bắt buộc)</span>
+          </span>
+          <input
+            type="tel"
+            autoComplete="tel"
+            placeholder="Số điện thoại của bạn"
+            {...register("phoneNumber")}
+            className="field"
+          />
+        </label>
+        <label className="field-label">
+          <span>
+            Địa chỉ{" "}
+            <span className="font-normal text-muted">(không bắt buộc)</span>
+          </span>
+          <input
+            autoComplete="street-address"
+            placeholder="Địa chỉ nhận sách"
+            {...register("address")}
+            className="field"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={loading}
+          className="button-primary mt-2 w-full"
+        >
+          {loading ? "Đang tạo tài khoản..." : "Tạo tài khoản"}
+          <Icon name="arrow" className="ml-auto size-4" />
+        </button>
+      </form>
+      <p className="mt-6 text-center text-sm text-muted">
+        Đã là bạn đọc?{" "}
+        <Link
+          href="/login"
+          className="font-semibold text-brand underline-offset-4 hover:underline"
+        >
+          Đăng nhập
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

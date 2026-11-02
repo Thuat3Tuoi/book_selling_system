@@ -7,7 +7,7 @@ import { RolesGuard } from "../guards/roles.guard.js";
 import { Roles } from "../guards/roles.decorator.js";
 import { BooksQueryDto } from "./dtos/books-query.dto.js";
 import { BookResponseDto } from "./dtos/book-response.dto.js";
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { ApiEnvelopeResponse } from "../common/api-envelope.decorator.js";
 
 @ApiTags("Books")
@@ -31,6 +31,18 @@ export class BooksController {
     async getBooks(@Query() query: BooksQueryDto) {
         const page = await this.booksService.getBooks(query.page ?? 1, query.limit ?? 10);
         return { data: page.data.map((book) => new BookResponseDto(book)), meta: page.meta };
+    }
+
+    @Get("categories")
+    @ApiOperation({ summary: "List categories from active books" })
+    @ApiResponse({ status: 200, schema: {
+        type: "object", required: ["success", "data"], properties: {
+            success: { type: "boolean", example: true },
+            data: { type: "array", items: { type: "string" } },
+        },
+    } })
+    getCategories(): Promise<string[]> {
+        return this.booksService.getCategories();
     }
 
     @Get(":id")

@@ -28,6 +28,7 @@ const resultSchemas: Record<string, ResponseSchema> = {
     OrdersController_updateOrderStatus: ref("OrderResponse"),
     BooksController_createBook: ref("BookResponse"),
     BooksController_getBooks: list(ref("BookResponse")),
+    BooksController_getCategories: list({ type: "string" }),
     BooksController_getBookById: ref("BookResponse"),
     BooksController_updateBook: ref("BookResponse"),
     BooksController_deleteBook: ref("BookResponse"),

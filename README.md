@@ -55,6 +55,10 @@ Compose chờ PostgreSQL, Redis, RabbitMQ và Meilisearch sẵn sàng, áp dụn
 | Swagger UI / OpenAPI JSON | `http://localhost:3001/api/docs` / `http://localhost:3001/api/docs-json` |
 | PostgreSQL, Redis, RabbitMQ, Meilisearch | Chỉ trong mạng Compose, không mở cổng host |
 
+Khi truy cập từ máy chạy Docker, dùng `http://localhost:3000` hoặc `http://127.0.0.1:3000`. Frontend giữ cùng hostname local khi gọi API; cấu hình CORS mẫu cho phép các địa chỉ loopback ở cổng `3000`. Nếu đổi cổng, cập nhật `CORS_ORIGINS` theo đúng giao thức, hostname và cổng frontend.
+
+Khi truy cập từ máy khác trong mạng LAN, đặt `NEXT_PUBLIC_API_URL` theo địa chỉ backend mà máy đó truy cập được, đồng thời thêm origin frontend tương ứng vào `CORS_ORIGINS`. Build lại frontend sau khi đổi `NEXT_PUBLIC_API_URL` vì biến này được đưa vào mã JavaScript khi build.
+
 API `/auth/login` trả access token sau khi đăng nhập. Tài khoản staff phục vụ thao tác tạo và sửa sách; các tài khoản customer phục vụ thử giỏ hàng và đơn hàng. E2E tự đăng ký hai khách hàng mới mỗi lần chạy để kiểm tra phân quyền độc lập với dữ liệu demo. Nhật ký các dịch vụ được truy xuất bằng `docker compose logs --tail=100 migrate seed-safe search-reindex backend frontend`. Lệnh `docker compose down` dừng hệ thống và giữ dữ liệu. Lệnh `docker compose down -v` **xóa các volume dữ liệu** của Compose project đang chọn.
 
 ## 3. Công nghệ và vị trí triển khai

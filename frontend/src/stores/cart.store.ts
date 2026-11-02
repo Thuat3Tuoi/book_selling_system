@@ -10,6 +10,8 @@ export interface CartItem {
     title: string;
     price: number | string;
     stockQuantity: number;
+    coverImageUrl?: string;
+    author?: string;
   };
 }
 
@@ -51,13 +53,10 @@ export const useCartStore = create<CartState>((set) => ({
   },
 
   addToCart: async (bookId, quantity) => {
-
-
     const data = {
       bookId,
       quantity,
     };
-
 
     await api.post("/carts/items", data);
 

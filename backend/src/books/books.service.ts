@@ -108,6 +108,20 @@ export class BooksService {
     };
 
     // =========================
+    // GET BOOK CATEGORIES
+    // =========================
+
+    getCategories = async (): Promise<string[]> => {
+        const categories = await this.prismaService.book.findMany({
+            where: { status: "ACTIVE", category: { not: "" } },
+            select: { category: true },
+            distinct: ["category"],
+            orderBy: { category: "asc" },
+        });
+        return categories.map(({ category }) => category).filter((category) => category.trim().length > 0);
+    };
+
+    // =========================
     // GET BOOK BY ID
     // =========================
 

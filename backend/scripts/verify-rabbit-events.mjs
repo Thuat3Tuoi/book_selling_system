@@ -2,6 +2,11 @@
 import amqp from "amqplib";
 import pg from "pg";
 
+if (process.env.E2E_ISOLATED_DB !== "YES" || !process.env.DATABASE_URL ||
+    !process.env.RABBITMQ_URL || !process.env.RABBITMQ_QUEUE) {
+    throw new Error("RabbitMQ verification requires E2E_ISOLATED_DB=YES and dedicated database/broker configuration");
+}
+
 const queue = process.env.RABBITMQ_QUEUE;
 const connection = await amqp.connect(process.env.RABBITMQ_URL);
 const channel = await connection.createConfirmChannel();
@@ -12,6 +17,7 @@ try {
     await db.connect();
     await channel.assertQueue(queue, { durable: true });
     await channel.assertQueue(`${queue}.dead`, { durable: true });
+    const initialDeadMessages = (await channel.checkQueue(`${queue}.dead`)).messageCount;
     const order = (await db.query('SELECT "id", "userId" FROM "Order" ORDER BY "id" LIMIT 1')).rows[0];
     if (!order) throw new Error("No seeded order available for RabbitMQ verification");
     const publish = (data) => channel.sendToQueue(
@@ -33,11 +39,11 @@ try {
         );
         notificationCount = result.rows[0].count;
         deadMessages = (await channel.checkQueue(`${queue}.dead`)).messageCount;
-        if (notificationCount === 1 && deadMessages === 1) break;
+        if (notificationCount === 1 && deadMessages === initialDeadMessages + 1) break;
         await sleep(200);
     }
-    console.log(JSON.stringify({ notificationCount, deadMessages }));
-    if (notificationCount !== 1 || deadMessages !== 1) {
+    console.log(JSON.stringify({ notificationCount, newDeadMessages: deadMessages - initialDeadMessages }));
+    if (notificationCount !== 1 || deadMessages !== initialDeadMessages + 1) {
         throw new Error("RabbitMQ idempotency or dead-letter verification failed");
     }
 } finally {

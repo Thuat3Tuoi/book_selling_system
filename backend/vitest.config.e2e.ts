@@ -8,5 +8,7 @@ export default defineConfig({
         root: "./",
         include: ["**/*.e2e-spec.ts"],
         setupFiles: ["./test/e2e-safety.ts"],
+        // The suites share a database, Redis cache and scheduled workers.
+        fileParallelism: false,
     },
 });

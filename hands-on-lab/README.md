@@ -2,13 +2,13 @@
 
 **Nhóm 9 · Book Selling System · Công nghệ chính: NestJS · Thời lượng: 40 phút.**
 
-Gói thực hành được bàn giao cùng báo cáo, phục vụ hoạt động thực hành độc lập và chấm chéo giữa các nhóm. Nội dung gồm hoàn thiện hàm `consumeWithRetryLab`, chạy bốn test và phân tích quyết định ACK/NACK. Thư mục `hands-on-lab/` chứa đầy đủ thành phần chạy bài; các liên kết mã nguồn đồ án ở cuối tài liệu phục vụ đối chiếu cơ chế triển khai.
+Tài liệu hướng dẫn hoàn thiện hàm `consumeWithRetryLab`, chạy bốn test và phân tích quyết định ACK/NACK. Thư mục `hands-on-lab/` chứa đầy đủ thành phần chạy bài độc lập; các liên kết mã nguồn ở cuối tài liệu phục vụ đối chiếu cơ chế triển khai.
 
-## 1. Cơ sở lựa chọn chủ đề — D0
+## 1. Mục đích bài thực hành
 
 Khi khách đặt sách, backend ghi đơn và outbox trong cùng transaction PostgreSQL. Publisher gửi `order.created` qua RabbitMQ; consumer tạo thông báo. Nếu ACK trước khi xử lý xong, thông điệp có thể mất khi handler lỗi. Nếu liên tục requeue một event không hợp lệ, consumer có thể lặp vô hạn.
 
-Chủ đề **retry có giới hạn, chuyển message lỗi sang dead queue và ACK/NACK đúng thời điểm** được lựa chọn từ cơ chế xử lý nền của dự án. Nội dung tập trung vào xử lý lỗi và phục hồi thông điệp sau các thao tác nghiệp vụ. Trong [kiểm chứng ngày 20/10/2026](../backend/docs/evidence/advanced-techniques-runtime-2026-10-20.md), event tham chiếu user không tồn tại được chuyển vào `.dead` sau ba lần xử lý; việc gửi lại cùng event chỉ tạo một thông báo.
+Chủ đề **retry có giới hạn, chuyển message lỗi sang dead queue và ACK/NACK đúng thời điểm** được lựa chọn từ cơ chế xử lý nền của dự án. Nội dung tập trung vào xử lý lỗi và phục hồi thông điệp sau các thao tác nghiệp vụ. Consumer thử xử lý tối đa ba lần trước khi chuyển thông điệp lỗi vào `.dead`; `Notification.eventId` và `upsert` giúp tránh tạo thông báo trùng khi nhận lại cùng sự kiện.
 
 Bài thực hành sử dụng channel giả lập để kiểm tra quyết định xử lý của consumer trong thời lượng dự kiến 40 phút. Phạm vi unit test gồm luồng điều khiển và thứ tự xác nhận. Độ bền dữ liệu và hành vi khi broker thật mất kết nối thuộc phạm vi kiểm thử tích hợp riêng.
 
@@ -24,7 +24,7 @@ Các mục tiêu của bài thực hành gồm:
 ## 3. Môi trường và công tác chuẩn bị
 
 - Kiến thức đầu vào: TypeScript, `async/await` và cách đọc unit test cơ bản.
-- Môi trường chạy: Node.js **22.12 trở lên trong nhánh 22, hoặc 24 trở lên** và npm. Phiên bản dùng để kiểm tra gói thực hành là Node.js 24.
+- Môi trường chạy: Node.js **22.12 trở lên trong nhánh 22, hoặc 24 trở lên** và npm.
 - Công cụ làm bài: trình soạn thảo và bản sao riêng của thư mục thực hành cho từng nhóm.
 - Terminal: **Bash trên Linux hoặc Git Bash trên Windows**. Trên Windows, mở thư mục thực hành bằng **Git Bash Here**; trong VS Code, chọn **Terminal → Select Default Profile → Git Bash**, rồi mở terminal mới.
 - Cài đặt dependency: kết nối Internet cho lần tải package đầu tiên và thực hiện `npm ci` trước buổi thực hành. Thời gian tải package nằm ngoài thời lượng 40 phút.
@@ -137,23 +137,23 @@ Nội dung ghi nhận trong [biểu mẫu kết quả](submission/MAU_KET_QUA.md
 
 ## 6. Tình huống lỗi và phương án xử lý
 
-Bảng dưới tổng hợp các tình huống đã ghi nhận trong kiểm thử dự án và các tình huống kiểm tra của starter:
+Bảng dưới hướng dẫn xử lý các tình huống lỗi của consumer và starter:
 
-| Hiện tượng | Nguồn ghi nhận / nguyên nhân | Cách kiểm tra và xử lý |
+| Hiện tượng | Nguyên nhân | Cách kiểm tra và xử lý |
 | --- | --- | --- |
-| Event `order.created` tham chiếu user không tồn tại, xử lý thất bại liên tiếp | Đã thử trong minh chứng 20/10: dữ liệu không hợp lệ, retry không tự sửa được | Giới hạn ba lần rồi đưa `.dead`; kiểm tra dữ liệu và lỗi trước khi phát lại. |
-| Tạo sách khi RabbitMQ dừng, event chưa được gửi | Đã thử trong minh chứng 20/10: broker không sẵn sàng | Outbox giữ event chưa publish và gửi lại khi broker phục hồi; không ACK trước khi chuyển message thành công. Bài lab chỉ kiểm thử nhánh consumer. |
-| Gửi lại cùng event có nguy cơ tạo thông báo trùng | Đã thử trong minh chứng 20/10: cùng `order.created` được gửi lại | Mã hiện tại dùng `eventId` unique + `upsert`; kết quả thử chỉ còn một notification. |
+| Event `order.created` tham chiếu user không tồn tại, xử lý thất bại liên tiếp | Dữ liệu không hợp lệ, retry không tự sửa được | Giới hạn ba lần rồi đưa `.dead`; kiểm tra dữ liệu và lỗi trước khi phát lại. |
+| Tạo sách khi RabbitMQ dừng, event chưa được gửi | Broker không sẵn sàng | Outbox giữ event chưa publish và gửi lại khi broker phục hồi; không ACK trước khi chuyển message thành công. Bài lab chỉ kiểm thử nhánh consumer. |
+| Gửi lại cùng event có nguy cơ tạo thông báo trùng | Cùng `order.created` được gửi lại | Dùng `eventId` unique + `upsert` để giữ một notification cho cùng sự kiện. |
 | Starter báo `temporary`, `permanent`, `bad event` | Starter chưa triển khai bắt lỗi, tương ứng trạng thái 1 thành công / 3 thất bại | Hoàn thiện TODO 1 → 2 → 3, chạy lại `npm test` sau từng bước. |
 | Bài 2 thấy `ack` trước `confirm` | Chỉ `await sendToQueue` hoặc ACK ngay sau khi gọi gửi | Bọc callback vào Promise, đợi Promise thành công mới ACK. |
 | Bài 3 throw hoặc vẫn ACK | Callback không `reject`, hoặc ACK nằm sau `catch` không có `return` | Catch lỗi tạo/gửi queue, NACK rồi `return`. |
 | Lỗi module hoặc không tìm thấy package | Chưa cài package hoặc terminal đang ở thư mục khác | Mở terminal tại thư mục có `package.json` của lab và chạy `npm ci`. |
 
-Nguồn ghi nhận của ba dòng đầu là [biên bản kiểm chứng của nhóm](../backend/docs/evidence/advanced-techniques-runtime-2026-10-20.md). Các dòng còn lại mô tả tình huống phục vụ bài tập. Phạm vi dữ liệu của bảng gồm môi trường kiểm thử và unit test giả lập.
+Để kiểm tra các tình huống trên với broker thật, dùng môi trường riêng theo [hướng dẫn kiểm thử tích hợp](../backend/docs/TESTING.md). Unit test của bài thực hành dùng channel giả lập.
 
-## 7. Bàn giao và chấm chéo
+## 7. Chia sẻ bài thực hành và đối chiếu kết quả
 
-**Gói bàn giao của nhóm biên soạn:** toàn bộ thư mục thực hành cùng báo cáo, gồm tài liệu, starter, test, đáp án và lockfile; loại trừ `node_modules/`. Starter được bàn giao ở trạng thái chưa giải, tương ứng 1 test thành công và 3 test thất bại.
+**Chia sẻ bài thực hành:** sao chép toàn bộ thư mục, gồm tài liệu, starter, test, đáp án và lockfile; loại trừ `node_modules/`. Starter ở trạng thái chưa giải, tương ứng 1 test thành công và 3 test thất bại.
 
 **Kết quả bàn giao của nhóm thực hành:** `starter/consumer.ts` đã hoàn thiện, ảnh hoặc bản chép kết quả `npm test` báo `4 passed`, thời gian thực hiện và hai câu trả lời cuối bài. Biểu mẫu ghi nhận kết quả được đặt tại `submission/MAU_KET_QUA.md`.
 
@@ -161,13 +161,13 @@ Các nội dung đối chiếu khi chấm chéo:
 
 | Nội dung | Căn cứ đối chiếu |
 | --- | --- |
-| Cơ sở lựa chọn chủ đề và mục tiêu học tập (D0) | Mục 1 và mục 2. |
+| Mục đích bài thực hành và mục tiêu học tập | Mục 1 và mục 2. |
 | Môi trường và thành phần chuẩn bị | Mục 3 và mục 4. |
 | Quy trình và thời lượng thực hiện | Năm bước tại mục 5; khung 30–45 phút, kế hoạch 40 phút. |
 | Kết quả ba bài tập | Mã bài làm, kết quả test và đáp án đối chiếu. |
 | Phân tích cơ chế xử lý | ACK/NACK, xử lý trùng và giới hạn của unit test. |
 
-Theo yêu cầu đề tài, bài thực hành được chấm riêng theo **D0–D3, tổng 20 điểm**, trong đó **D0 là 5 điểm**. Tên và phân bổ điểm của D1–D3 chưa được xác định trong tài liệu do chưa có mô tả rubric chi tiết. Thời lượng 40 phút là phân bổ dự kiến; thời gian và kết quả thực tế được nhóm chấm chéo ghi nhận sau buổi thực hành.
+Khi đối chiếu bài làm, dùng cùng bộ test cho starter và đáp án, đọc thứ tự ACK/NACK và kiểm tra cách xử lý lỗi callback. Điền kết quả cùng câu trả lời vào `submission/MAU_KET_QUA.md`.
 
 ## 8. Mã nguồn và tài liệu đối chiếu
 
@@ -175,7 +175,7 @@ Các liên kết `../backend/...` tham chiếu mã nguồn trong repository đ�
 
 - [Helper retry trong dự án](../backend/src/infrastructure/rabbitmq/consume-with-retry.ts) và [unit test tương ứng](../backend/src/infrastructure/rabbitmq/consume-with-retry.spec.ts).
 - [Consumer đơn hàng](../backend/src/orders/dtos/consumers/order-created.consumer.ts) và [service tạo notification](../backend/src/notifications/notifications.service.ts).
-- [Minh chứng runtime 20/10/2026](../backend/docs/evidence/advanced-techniques-runtime-2026-10-20.md).
+- [Hướng dẫn kiểm thử backend và dịch vụ](../backend/docs/TESTING.md).
 - [NestJS: RabbitMQ, message acknowledgement](https://docs.nestjs.com/microservices/rabbitmq#message-acknowledgement).
 - [RabbitMQ: consumer acknowledgements và publisher confirms](https://www.rabbitmq.com/docs/confirms).
 - [amqplib: ConfirmChannel và callback gửi message](https://amqp-node.github.io/amqplib/channel_api.html#confirmchannel).

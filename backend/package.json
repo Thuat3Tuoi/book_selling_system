@@ -31,6 +31,8 @@
         "test:debug": "vitest --inspect-brk --no-file-parallelism",
         "pretest:e2e": "prisma generate",
         "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+        "test:runtime": "node scripts/test-runtime.mjs",
+        "db:explain": "node scripts/explain-orders.mjs",
         "reindex": "node dist/search/reindex.script.js",
         "evidence": "node scripts/collect-evidence.mjs"
     },

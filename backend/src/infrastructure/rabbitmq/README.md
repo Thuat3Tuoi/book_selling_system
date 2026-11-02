@@ -36,7 +36,7 @@ Môi trường kiểm tra sử dụng database phát triển đã được khở
    }
    ```
 
-4. Gọi `GET /notifications` bằng cùng tài khoản. Thông báo `ORDER_CREATED` có thể xuất hiện sau vài giây vì publisher kiểm tra outbox mỗi 5 giây.
+4. Gọi `GET /notifications` bằng cùng tài khoản. Thông báo `ORDER_CREATED` có thể xuất hiện sau vài giây vì publisher kiểm tra outbox mỗi 10 giây.
 5. Kiểm tra queue và log:
 
    ```bash

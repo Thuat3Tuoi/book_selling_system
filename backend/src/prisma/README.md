@@ -40,7 +40,7 @@ Compose tại thư mục gốc tự chạy seed an toàn với mật khẩu đư
 docker compose run --rm seed-safe
 ```
 
-Lệnh bổ sung các bản ghi mẫu còn thiếu và giữ nguyên dữ liệu đã có khi thực thi lại. Script `npm run prisma:seed` khởi tạo bộ dữ liệu demo có số lượng lớn hơn, với điều kiện `DEMO_SEED_ENABLED=true` và `NODE_ENV=development` hoặc `test`. Script sử dụng upsert/create và giữ nguyên dữ liệu cũ. Phạm vi sử dụng là database phát triển và kiểm thử.
+Lệnh bổ sung các bản ghi mẫu còn thiếu và giữ nguyên dữ liệu đã có khi thực thi lại. Script `npm run prisma:seed:safe` tạo sáu tài khoản và 20 sách; script `npm run prisma:seed` tạo cùng các tài khoản và 10 sách. Cả hai cần `DEMO_SEED_ENABLED=true` và `NODE_ENV=development` hoặc `test`, sử dụng upsert/create và giữ nguyên dữ liệu cũ. Phạm vi sử dụng là database phát triển và kiểm thử. Danh sách tài khoản nằm trong [README gốc](../../../README.md).
 
 Quy trình đồng bộ chỉ mục sau khi seed riêng được trình bày trong [tài liệu Meilisearch](../search/README.md).
 

@@ -27,6 +27,7 @@ import { ThrottlerGuard } from "@nestjs/throttler";
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { ApiEnvelopeResponse } from "../common/api-envelope.decorator.js";
 import { AccessTokenResponseDto, LoginResponseDto } from "./dto/auth-response.dto.js";
+import { MessageResponseDto } from "../common/dto/message-response.dto.js";
 @ApiTags("Auth")
 @Controller("auth")
 export class AuthController {
@@ -34,7 +35,7 @@ export class AuthController {
     @Post("register")
     @UseGuards(ThrottlerGuard)
     @ApiOperation({ summary: "Create a customer account" })
-    @ApiResponse({ status: 201, description: "Account created" })
+    @ApiEnvelopeResponse(201, MessageResponseDto)
     register(@Body() dto: CreateUserDto) {
         return this.authService.register(dto);
     }
@@ -73,6 +74,8 @@ export class AuthController {
     }
 
     @Post("logout")
+    @ApiOperation({ summary: "Log out and clear the refresh cookie" })
+    @ApiEnvelopeResponse(201, MessageResponseDto)
     async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
         const refreshToken = req.cookies?.refreshToken;
 

@@ -11,6 +11,7 @@ describe("Books HTTP access and validation", () => {
     const booksService = {
         getBooks: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, limit: 10, total: 0, totalPages: 0 } }),
         getBookById: vi.fn(),
+        getCategories: vi.fn().mockResolvedValue(["A newly created category"]),
         createBook: vi.fn().mockResolvedValue({ id: 1 }),
         updateBook: vi.fn(),
         deleteBook: vi.fn(),
@@ -43,6 +44,13 @@ describe("Books HTTP access and validation", () => {
         await request(app.getHttpServer()).get("/books?page=1&limit=10").expect(200);
         await request(app.getHttpServer()).get("/books?page=0").expect(400);
         await request(app.getHttpServer()).get("/books?limit=101").expect(400);
+    });
+
+    it("serves database categories publicly instead of treating categories as a numeric book ID", async () => {
+        await request(app.getHttpServer()).get("/books/categories")
+            .expect(200, ["A newly created category"]);
+        expect(booksService.getCategories).toHaveBeenCalled();
+        expect(booksService.getBookById).not.toHaveBeenCalled();
     });
 
     it("protects book creation and validates the body", async () => {

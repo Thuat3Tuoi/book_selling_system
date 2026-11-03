@@ -89,9 +89,18 @@ jobs:
       - name: Migrate disposable database
         run: npx prisma migrate deploy
       - name: Seed disposable database
-        run: npm run prisma:seed
-      - name: End-to-end API tests
-        run: npm run test:e2e
+        run: npm run prisma:seed:safe
+      - name: Real API, cache, search, RabbitMQ, cron and query-plan checks
+        run: npm run test:runtime
+        env:
+          EXPLAIN_OUTPUT: artifacts/orders-explain.json
+      - name: Upload query-plan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-explain
+          path: backend/artifacts/orders-explain.json
+          if-no-files-found: ignore
 
   frontend:
     runs-on: ubuntu-latest

@@ -1,7 +1,3 @@
-// Các type dưới đây bám theo field trong service backend (Prisma).
-// Một vài field (vd: coverUrl, author) chưa thấy trong DTO/service được cung cấp
-// nên để optional — chỉnh lại nếu schema Book thật khác.
-
 export interface User {
   id: number;
   firstName: string;
@@ -36,8 +32,11 @@ export interface Book {
   title: string;
   author?: string;
   description?: string;
-  price: string; // Prisma.Decimal -> JSON string, vd "120000"
-  stockQuantity: number;
+  isbn?: string;
+  category?: string;
+  price: string | number;
+  // Search documents omit inventory; detail and catalog endpoints include it.
+  stockQuantity?: number;
   coverImageUrl?: string;
   status: BookStatus;
 }

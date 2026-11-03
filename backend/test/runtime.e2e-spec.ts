@@ -1,17 +1,19 @@
 import { HttpStatus } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Redis } from "ioredis";
 import request from "supertest";
 import { NotificationType, OrderStatus } from "../src/generated/prisma/enums.js";
 
 const baseUrl = process.env.E2E_BASE_URL;
-const samplePassword = process.env.E2E_SAMPLE_PASSWORD;
-const allowedOrigin = process.env.E2E_ALLOWED_ORIGIN ?? "http://localhost:31000";
+const samplePassword = process.env.E2E_SAMPLE_PASSWORD || process.env.SEED_DEFAULT_PASSWORD;
+const allowedOrigin = process.env.E2E_ALLOWED_ORIGIN ?? "http://localhost:3000";
 
-describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
+describe.skipIf(!baseUrl)("real HTTP purchase flow (e2e)", () => {
     const api = () => request(baseUrl!);
     let customerA: string;
     let customerB: string;
     let staff: string;
+    let redis: Redis;
 
     async function login(email: string): Promise<string> {
         const response = await api()
@@ -24,10 +26,36 @@ describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
     }
 
     beforeAll(async () => {
-        if (!samplePassword) throw new Error("E2E_SAMPLE_PASSWORD is required");
-        customerA = await login("customer-a@bookstore.example.com");
-        customerB = await login("customer-b@bookstore.example.com");
+        if (!samplePassword) throw new Error("E2E_SAMPLE_PASSWORD or SEED_DEFAULT_PASSWORD is required");
+        redis = new Redis({
+            host: process.env.REDIS_HOST ?? "127.0.0.1",
+            port: Number(process.env.REDIS_PORT ?? 6379),
+            password: process.env.REDIS_PASSWORD || undefined,
+            maxRetriesPerRequest: 1,
+        });
+        // Use fresh customers so reruns do not depend on seed names or old carts.
+        for (const name of ["a", "b"]) {
+            const email = `runtime-${name}-${randomUUID()}@example.com`;
+            await api().post("/auth/register").send({
+                firstName: "Runtime", lastName: name, email, password: samplePassword,
+            }).expect(HttpStatus.CREATED);
+            const token = await login(email);
+            if (name === "a") customerA = token;
+            else customerB = token;
+        }
         staff = await login("staff@bookstore.example.com");
+    });
+
+    afterAll(() => redis?.disconnect());
+
+    it("serves generated OpenAPI and restricts CORS to the configured origin", async () => {
+        const docs = await api().get("/api/docs-json").expect(HttpStatus.OK);
+        expect(docs.body.paths["/books"].post.security).toBeDefined();
+        expect(docs.body.paths["/auth/login"].post.responses["200"]).toBeDefined();
+        const allowed = await api().get("/health").set("Origin", allowedOrigin).expect(HttpStatus.OK);
+        expect(allowed.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+        const blocked = await api().get("/health").set("Origin", "https://attacker.example.com");
+        expect(blocked.headers["access-control-allow-origin"]).toBeUndefined();
     });
 
     it("validates books and isolates carts, orders, roles and notifications", async () => {
@@ -37,7 +65,7 @@ describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
             isbn,
             description: "Isolated end to end purchase test",
             author: "Audit",
-            category: "Testing",
+            category: `Testing ${isbn}`,
             price: 120,
             stockQuantity: 5,
             coverImageUrl: "https://example.com/cover.jpg",
@@ -67,10 +95,17 @@ describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
 
         const initialDetail = await api().get(`/books/${bookId}`).expect(HttpStatus.OK);
         expect(Number(initialDetail.body.data.price)).toBe(book.price);
+        const revision = Number(await redis.get(`book:${bookId}:revision`) ?? 0);
+        const cacheKey = `book:${bookId}:rev:${revision}`;
+        expect(JSON.parse((await redis.get(cacheKey))!).id).toBe(bookId);
+        expect(await redis.ttl(cacheKey)).toBeGreaterThan(0);
+        expect(await redis.ttl(cacheKey)).toBeLessThanOrEqual(300);
+        await api().get(`/books/${bookId}`).expect(HttpStatus.OK);
         await api().get("/books").expect(HttpStatus.OK);
 
         await api().patch(`/books/${bookId}`).set("Authorization", `Bearer ${staff}`)
             .send({ price: 130 }).expect(HttpStatus.OK);
+        expect(Number(await redis.get(`book:${bookId}:revision`))).toBeGreaterThan(revision);
         const updatedDetail = await api().get(`/books/${bookId}`).expect(HttpStatus.OK);
         expect(Number(updatedDetail.body.data.price)).toBe(130);
         const updatedList = await api().get("/books").expect(HttpStatus.OK);
@@ -150,8 +185,9 @@ describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
             item.message === `Order #${orderId} created`
         )).toBe(false);
 
+        // Staff also exercises the same refresh-cookie flow as a customer.
         const cookieLogin = await api().post("/auth/login")
-            .send({ email: "customer-a@bookstore.example.com", password: samplePassword })
+            .send({ email: "staff@bookstore.example.com", password: samplePassword })
             .expect(HttpStatus.OK);
         const setCookie = cookieLogin.headers["set-cookie"];
         const refreshCookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie).split(";")[0];
@@ -163,5 +199,25 @@ describe.skipIf(!baseUrl)("container HTTP purchase flow (e2e)", () => {
             .set("Cookie", refreshCookie)
             .set("Origin", allowedOrigin)
             .expect(HttpStatus.CREATED);
+
+        const cheap = await api().post("/books").set("Authorization", `Bearer ${staff}`)
+            .send({ ...book, isbn: `${isbn}-cheap`, price: 50 }).expect(HttpStatus.CREATED);
+        let prices: number[] = [];
+        for (let attempt = 0; attempt < 40; attempt++) {
+            const search = await api().get("/search/books")
+                .query({ category: book.category, sort: "price:desc", limit: 10 }).expect(HttpStatus.OK);
+            prices = search.body.data.hits.map((hit: { price: number }) => hit.price);
+            if (prices.length === 2) break;
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        expect(prices).toEqual([130, 50]);
+        const page = await api().get("/search/books")
+            .query({ category: book.category, sort: "price:desc", page: 2, limit: 1 }).expect(HttpStatus.OK);
+        expect(page.body.data.hits.map((hit: { id: number }) => hit.id)).toEqual([cheap.body.data.id]);
+        await api().delete(`/books/${cheap.body.data.id}`).set("Authorization", `Bearer ${staff}`)
+            .expect(HttpStatus.OK);
+        await api().get(`/books/${cheap.body.data.id}`).expect(HttpStatus.NOT_FOUND);
+        const afterDisable = await api().get("/search/books").query({ category: book.category }).expect(HttpStatus.OK);
+        expect(afterDisable.body.data.hits.some((hit: { id: number }) => hit.id === cheap.body.data.id)).toBe(false);
     }, 60_000);
 });

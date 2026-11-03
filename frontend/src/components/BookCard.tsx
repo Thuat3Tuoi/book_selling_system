@@ -1,88 +1,107 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Book } from "@/lib/types";
-import Image from "next/image";
 import { formatPrice } from "@/lib/format";
 import { useCartStore } from "@/stores/cart.store";
-
-enum AddToCartStatus {
-  IDLE = "idle",
-  LOADING = "loading",
-  DONE = "done",
-  ERROR = "error",
-}
+import { useAuthStore } from "@/stores/auth.store";
+import { notify } from "@/stores/notification.store";
+import { errorMessage } from "@/lib/errors";
+import BookCover from "@/components/BookCover";
+import Icon from "@/components/Icon";
 
 export default function BookCard({ book }: { book: Book }) {
-  const [status, setStatus] = useState<AddToCartStatus>(AddToCartStatus.IDLE);
-
-  const outOfStock = book.stockQuantity <= 0;
+  const router = useRouter();
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">(
+    "idle",
+  );
   const addToCart = useCartStore((state) => state.addToCart);
+  const outOfStock = book.stockQuantity === 0;
 
-  const handleAdd = async () => {
-    setStatus(AddToCartStatus.LOADING);
+  async function handleAdd() {
+    if (!useAuthStore.getState().accessToken) {
+      notify.info("Bạn đăng nhập để thêm sách vào giỏ hàng nhé.");
+      router.push(`/login?next=${encodeURIComponent(`/products/${book.id}`)}`);
+      return;
+    }
+    setStatus("loading");
     try {
       await addToCart(book.id, 1);
-      setStatus(AddToCartStatus.DONE);
-    } catch {
-      setStatus(AddToCartStatus.ERROR);
+      setStatus("done");
+      notify.success(`Đã thêm “${book.title}” vào giỏ hàng.`);
+    } catch (error) {
+      setStatus("error");
+      notify.error(errorMessage(error, "Chưa thể thêm sách. Bạn thử lại nhé."));
     }
-  };
-
+  }
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-sm border border-[#E4DCC8] bg-white">
-      <Link href={`/products/${book.id}`} className="block">
-        <div className="flex aspect-[3/4] items-center justify-center bg-[#EFE9DA] px-4 text-center">
-          {book.coverImageUrl ? (
-            <Image
-              width={200}
-              height={300}
-              src={book.coverImageUrl}
-              alt={`Bìa sách ${book.title}`}
-              className="max-h-full max-w-full object-contain"
-            />
-          ) : (
-            <span className="font-serif text-sm leading-snug text-[#1F2321]/50">
-              Không có bìa sách
-            </span>
-          )}
-        </div>
-      </Link>
-
-      <div className="flex flex-1 flex-col gap-2 p-4">
-        <Link href={`/products/${book.id}`}>
-          <h3 className="font-serif text-base font-medium leading-snug text-[#1F2321] hover:text-[#2F4B3C]">
-            {book.title}
-          </h3>
-        </Link>
-        {book.author && (
-          <p className="text-sm text-[#1F2321]/60">{book.author}</p>
-        )}
-
-        <div className="mt-auto flex items-center justify-between pt-2">
-          <span className="font-medium text-[#2F4B3C]">
-            {formatPrice(book.price)}
+    <article className="group flex min-w-0 flex-col">
+      <Link
+        href={`/products/${book.id}`}
+        aria-label={`Xem sách ${book.title}`}
+        className="relative mb-5 flex aspect-[1/1.12] items-center justify-center overflow-hidden rounded-2xl bg-paper p-7 transition-colors group-hover:bg-[#e9eddf] sm:p-9"
+      >
+        {outOfStock && (
+          <span className="absolute top-3 left-3 z-10 rounded-full bg-white/90 px-3 py-1 text-[10px] font-medium text-muted">
+            Tạm hết hàng
           </span>
-          <button
-            onClick={handleAdd}
-            disabled={outOfStock || status === AddToCartStatus.LOADING}
-            className="rounded-full bg-[#2F4B3C] px-3 py-1.5 text-xs font-medium text-[#FAF6EE] transition-colors hover:bg-[#26392E] disabled:cursor-not-allowed disabled:bg-[#1F2321]/20"
-          >
-            {outOfStock
-              ? "Hết hàng"
-              : status === AddToCartStatus.LOADING
-                ? "Đang thêm..."
-                : status === AddToCartStatus.DONE
-                  ? "Đã thêm ✓"
-                  : "Thêm vào giỏ"}
-          </button>
-        </div>
-        {status === AddToCartStatus.ERROR && (
-          <p className="text-xs text-red-600">Có lỗi, thử lại nhé.</p>
         )}
+        <BookCover
+          book={book}
+          className="h-full max-w-[84%] rounded-r-sm transition-transform duration-500 group-hover:-translate-y-2 group-hover:rotate-2"
+        />
+        <span className="absolute right-3 bottom-3 flex size-8 items-center justify-center rounded-full bg-white text-brand opacity-0 transition group-hover:opacity-100">
+          <Icon name="arrow" className="size-4" />
+        </span>
+      </Link>
+      <p className="mb-2 truncate text-[10px] font-medium tracking-[0.12em] text-gold uppercase">
+        {book.category ?? "Tủ sách chọn lọc"}
+      </p>
+      <Link
+        href={`/products/${book.id}`}
+        className="transition hover:text-brand"
+      >
+        <h3 className="line-clamp-2 min-h-12 font-serif text-base leading-6 font-medium sm:text-lg">
+          {book.title}
+        </h3>
+      </Link>
+      <p className="mt-2 truncate text-xs text-muted sm:text-sm">
+        {book.author ?? "Tác giả đang cập nhật"}
+      </p>
+      <div className="mt-auto flex items-center justify-between gap-2 pt-4">
+        <span className="text-sm font-semibold text-brand sm:text-base">
+          {formatPrice(book.price)}
+        </span>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={outOfStock || status === "loading"}
+          aria-label={
+            status === "done"
+              ? `Đã thêm ${book.title}`
+              : `Thêm ${book.title} vào giỏ`
+          }
+          className={`flex size-9 shrink-0 items-center justify-center rounded-full border transition disabled:opacity-40 ${status === "done" ? "border-brand bg-brand text-white" : "border-line bg-white text-brand hover:border-brand hover:bg-brand hover:text-white"}`}
+        >
+          <Icon
+            name={status === "done" ? "check" : "plus"}
+            className={`size-4 ${status === "loading" ? "animate-pulse" : ""}`}
+          />
+        </button>
       </div>
-    </div>
+      <span
+        role="status"
+        className={`mt-2 text-xs ${status === "error" ? "text-red-600" : "text-brand"}`}
+      >
+        {status === "error"
+          ? "Chưa thể thêm sách. Hãy thử lại."
+          : status === "done"
+            ? "Đã thêm vào giỏ hàng"
+            : " "}
+      </span>
+    </article>
   );
 }

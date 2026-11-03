@@ -1,43 +1,44 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Lora } from "next/font/google";
+import { Geist, Lora } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-// import { AuthProvider } from "@/context/AuthContext";
-// import { CartProvider } from "@/context/CartContext";
+import Notifications from "@/components/Notifications";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const bookSerif = Lora({
+const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const lora = Lora({
   variable: "--font-book-serif",
-  subsets: ["latin"],
+  subsets: ["latin", "vietnamese"],
 });
 
 export const metadata: Metadata = {
-  title: "Hiệu Sách Thuật",
-  description: "Hệ thống bán sách trực tuyến — đồ án CCNLTHD",
+  title: {
+    default: "Book Store — Một góc nhỏ cho người yêu sách",
+    template: "%s | Book Store",
+  },
+  description:
+    "Khám phá những cuốn sách về văn học, cuộc sống và tri thức. Tìm cuốn sách tiếp theo của bạn tại Book Store.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="vi"
-      className={`${geistSans.variable} ${geistMono.variable} ${bookSerif.variable} h-full antialiased`}
+      className={`${geist.variable} ${lora.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col font-sans">
-
-            <Navbar />
-            <main className="flex flex-1 flex-col">{children}</main>
-            <Footer />
-
+        <a
+          href="#main-content"
+          className="sr-only fixed top-3 left-3 z-50 rounded-lg bg-brand px-4 py-3 text-sm text-white focus:not-sr-only"
+        >
+          Đi tới nội dung chính
+        </a>
+        <Navbar />
+        <main id="main-content" className="flex flex-1 flex-col">
+          {children}
+        </main>
+        <Footer />
+        <Notifications />
       </body>
     </html>
   );

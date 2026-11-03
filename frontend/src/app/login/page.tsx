@@ -1,135 +1,186 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-
+import axios from "axios";
 import { useAuthStore } from "@/stores/auth.store";
+import { notify } from "@/stores/notification.store";
+import { errorMessage } from "@/lib/errors";
+import AuthShell from "@/components/AuthShell";
+import Icon from "@/components/Icon";
 
-const loginSchema = z.object({
-  email: z
-    .string()
-    .trim()
-    .email("Email không hợp lệ"),
-
-  password: z
-    .string()
-    .min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
+const schema = z.object({
+  email: z.string().trim().email("Bạn nhập một địa chỉ email hợp lệ nhé."),
+  password: z.string().min(6, "Mật khẩu cần ít nhất 6 ký tự."),
 });
-
-type LoginData = z.infer<typeof loginSchema>;
+type LoginData = z.infer<typeof schema>;
 
 function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const login = useAuthStore((state) => state.login);
-  const loading = useAuthStore((state) => state.loading);
-
-  const justRegistered = searchParams.get("registered") === "1";
-
+  const params = useSearchParams();
+  const { login, loading } = useAuthStore();
+  const [error, setError] = useState("");
+  const [visible, setVisible] = useState(false);
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginData>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
-  });
+  } = useForm<LoginData>({ resolver: zodResolver(schema) });
 
-  const onSubmit = async (data: LoginData) => {
+  async function submit(data: LoginData) {
+    setError("");
     try {
       await login(data);
-
-      router.push("/");
+      notify.success("Đăng nhập thành công. Chào mừng bạn trở lại!");
+      const requested = params.get("next");
+      const target =
+        requested &&
+        (requested === "/orders" ||
+          /^\/products\/\d+$/.test(requested) ||
+          /^\/orders\/[1-9]\d*\/success$/.test(requested))
+          ? requested
+          : "/";
+      router.push(target);
     } catch (error) {
-      console.error(error);
+      const message =
+        axios.isAxiosError(error) && error.response?.status === 401
+          ? "Email hoặc mật khẩu chưa đúng. Bạn kiểm tra lại nhé."
+          : errorMessage(
+              error,
+              "Chưa thể đăng nhập. Bạn hãy thử lại sau một chút.",
+            );
+      setError(message);
+      notify.error(message);
     }
-  };
+  }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-[#FAF6EE] px-6 py-16">
-      <div className="w-full max-w-sm">
-        <h1 className="font-serif text-2xl font-medium text-[#1F2321]">
-          Đăng nhập
-        </h1>
-
-        <p className="mt-1 text-sm text-[#1F2321]/60">
-          Chưa có tài khoản?{" "}
-          <Link
-            href="/register"
-            className="text-[#2F4B3C] hover:underline"
-          >
-            Đăng ký
-          </Link>
-        </p>
-
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className="mt-8 flex flex-col gap-4"
-        >
-          {justRegistered && (
-            <p className="rounded-sm border border-[#2F4B3C]/30 bg-[#2F4B3C]/5 px-3 py-2 text-sm text-[#2F4B3C]">
-              Tạo tài khoản thành công, đăng nhập để tiếp tục.
-            </p>
-          )}
-
-          {/* Email */}
-          <label className="flex flex-col gap-1.5 text-sm text-[#1F2321]">
-            Email
-
+    <AuthShell>
+      <p className="eyebrow mb-3">Rất vui được gặp lại bạn</p>
+      <h1 className="font-serif text-3xl tracking-tight sm:text-4xl">
+        Chào bạn đọc.
+      </h1>
+      <p className="mt-3 text-sm leading-7 text-muted">
+        Đăng nhập để tiếp tục câu chuyện của bạn.
+      </p>
+      <form
+        onSubmit={handleSubmit(submit)}
+        noValidate
+        className="mt-8 space-y-5"
+      >
+        {params.get("registered") === "1" && (
+          <p role="status" className="notice-success">
+            Tài khoản đã sẵn sàng. Đăng nhập để khám phá tủ sách nhé!
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="notice-error">
+            {error}
+          </p>
+        )}
+        <label className="field-label">
+          Địa chỉ email
+          <div className="relative">
+            <Icon
+              name="mail"
+              className="pointer-events-none absolute top-3.5 left-3.5 size-4.5 text-muted"
+            />
             <input
               type="email"
-              {...register("email")}
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
+              autoComplete="email"
               placeholder="ban@vidu.com"
+              {...register("email")}
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={errors.email ? "login-email-error" : undefined}
+              className="field pl-10"
             />
-
-            {errors.email && (
-              <span className="text-xs text-red-600">
-                {errors.email.message}
-              </span>
-            )}
-          </label>
-
-          {/* Password */}
-          <label className="flex flex-col gap-1.5 text-sm text-[#1F2321]">
-            Mật khẩu
-
+          </div>
+          {errors.email && (
+            <span
+              id="login-email-error"
+              className="text-xs font-normal text-red-600"
+            >
+              {errors.email.message}
+            </span>
+          )}
+        </label>
+        <label className="field-label">
+          Mật khẩu
+          <div className="relative">
+            <Icon
+              name="lock"
+              className="pointer-events-none absolute top-3.5 left-3.5 size-4.5 text-muted"
+            />
             <input
-              type="password"
+              type={visible ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="Nhập mật khẩu của bạn"
               {...register("password")}
-              className="rounded-sm border border-[#E4DCC8] bg-white px-3 py-2 outline-none focus:border-[#2F4B3C]"
-              placeholder="••••••"
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={
+                errors.password ? "login-password-error" : undefined
+              }
+              className="field pr-12 pl-10"
             />
-
-            {errors.password && (
-              <span className="text-xs text-red-600">
-                {errors.password.message}
-              </span>
-            )}
-          </label>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="mt-2 rounded-full bg-[#2F4B3C] px-4 py-2.5 text-sm font-medium text-[#FAF6EE] transition-colors hover:bg-[#26392E] disabled:opacity-60"
-          >
-            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
-          </button>
-        </form>
+            <button
+              type="button"
+              aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              aria-pressed={visible}
+              onClick={() => setVisible(!visible)}
+              className="absolute top-1 right-1 flex size-10 items-center justify-center rounded-lg text-muted hover:text-brand"
+            >
+              <Icon name="eye" className="size-4.5" />
+            </button>
+          </div>
+          {errors.password && (
+            <span
+              id="login-password-error"
+              className="text-xs font-normal text-red-600"
+            >
+              {errors.password.message}
+            </span>
+          )}
+        </label>
+        <button
+          type="submit"
+          disabled={loading}
+          className="button-primary mt-2 w-full"
+        >
+          {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+          <Icon name="arrow" className="ml-auto size-4" />
+        </button>
+      </form>
+      <p className="mt-7 text-center text-sm text-muted">
+        Mới ghé hiệu sách?{" "}
+        <Link
+          href="/register"
+          className="font-semibold text-brand underline-offset-4 hover:underline"
+        >
+          Tạo tài khoản
+        </Link>
+      </p>
+      <div className="mt-8 flex items-center justify-center gap-2 border-t border-line pt-6 text-[11px] text-muted">
+        <Icon name="book" className="size-4 text-brand" />
+        Một cuốn sách hay luôn là một khởi đầu tốt.
       </div>
-    </div>
+    </AuthShell>
   );
 }
 
 export default function LoginPage() {
-  return <Suspense fallback={null}><LoginForm /></Suspense>;
+  return (
+    <Suspense
+      fallback={
+        <div className="page-shell py-12">
+          <div className="h-96 animate-pulse rounded-3xl bg-paper" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
+  );
 }
-

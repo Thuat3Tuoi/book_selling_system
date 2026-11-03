@@ -1,5 +1,5 @@
 // Thu thập minh chứng chạy thật cho: (1) tìm kiếm Meilisearch + thời gian phản hồi,
-// (2) thao tác giỏ hàng. Ghi kết quả vào docs/evidence/.
+// (2) thao tác giỏ hàng. Ghi kết quả vào artifacts/ (được Git bỏ qua).
 //
 // Yêu cầu: backend đang chạy, đã seed DB, Meilisearch đã có dữ liệu (npm run search:reindex).
 // Chạy:    npm run evidence
@@ -18,7 +18,7 @@ const BASE = (process.env.EVIDENCE_BASE_URL ?? `http://localhost:${PORT}`).repla
 const QUERIES = (process.env.EVIDENCE_QUERIES ?? "book,clean,code").split(",").map((s) => s.trim()).filter(Boolean);
 const CATEGORY = process.env.EVIDENCE_CATEGORY;
 const REPEAT = 3;
-const OUT = new URL("../docs/evidence/", import.meta.url);
+const OUT = new URL("../artifacts/", import.meta.url);
 
 const unwrap = (body) => (body && typeof body === "object" && "data" in body ? body.data : body);
 
@@ -140,4 +140,4 @@ steps.forEach((s, i) => {
 await mkdir(OUT, { recursive: true });
 await writeFile(new URL("search-meilisearch.md", OUT), searchMd);
 await writeFile(new URL("cart-operations.md", OUT), cartMd);
-console.log("Đã ghi backend/docs/evidence/search-meilisearch.md và cart-operations.md");
+console.log("Đã ghi backend/artifacts/search-meilisearch.md và cart-operations.md");

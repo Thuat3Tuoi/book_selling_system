@@ -145,6 +145,31 @@ describe("BooksService", () => {
         });
     });
 
+    describe("getCategories", () => {
+        it("loads categories of active books from the database without a predefined list", async () => {
+            prisma.book.findMany.mockResolvedValue([
+                { category: "A category added by staff" },
+                { category: "Another new category" },
+                { category: "   " },
+            ]);
+
+            await expect(service.getCategories()).resolves.toEqual([
+                "A category added by staff", "Another new category",
+            ]);
+            expect(prisma.book.findMany).toHaveBeenCalledWith({
+                where: { status: "ACTIVE", category: { not: "" } },
+                select: { category: true },
+                distinct: ["category"],
+                orderBy: { category: "asc" },
+            });
+        });
+
+        it("returns no categories when there are no active books", async () => {
+            prisma.book.findMany.mockResolvedValue([]);
+            await expect(service.getCategories()).resolves.toEqual([]);
+        });
+    });
+
     describe("getBookById", () => {
         it("cache hit: trả sách từ Redis", async () => {
             const book = makeBook();

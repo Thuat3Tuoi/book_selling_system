@@ -33,7 +33,9 @@ Backend cũng tự đối soát index khi khởi động và mỗi 15 phút. T�
 
 ## 3. Điều kiện kiểm thử E2E
 
-Môi trường E2E sử dụng **database cô lập** và biến `E2E_ISOLATED_DB=YES`. Kiểm thử HTTP container sử dụng thêm `E2E_BASE_URL`, `E2E_SAMPLE_PASSWORD` và `E2E_ALLOWED_ORIGIN`; giá trị origin tương ứng với `CORS_ORIGINS` của backend. Phạm vi và kết quả kiểm thử đã thực hiện được ghi trong [biên bản ngày 21/10/2026](docs/evidence/audit-2026-10-21.md).
+Môi trường E2E sử dụng **database và dịch vụ cô lập** cùng biến `E2E_ISOLATED_DB=YES`. Sau khi build, migrate và seed database thử, `npm run test:runtime` tự khởi động API trên cổng trống, chạy đầy đủ E2E và các kiểm tra RabbitMQ/EXPLAIN, rồi dừng API đó. Biến kết nối phải truy cập được từ tiến trình chạy test; Compose mặc định không mở cổng dữ liệu ra host. Hướng dẫn và danh sách biến nằm trong [README gốc](../README.md#4-quy-trình-kiểm-thử).
+
+Nếu kiểm thử một API có sẵn bằng `npm run test:e2e`, đặt thêm `E2E_BASE_URL`, `E2E_SAMPLE_PASSWORD` (hoặc `SEED_DEFAULT_PASSWORD`) và `E2E_ALLOWED_ORIGIN`; origin phải thuộc `CORS_ORIGINS` của API. Suite HTTP bị bỏ qua khi thiếu `E2E_BASE_URL`. Xem [hướng dẫn kiểm thử](docs/TESTING.md) để chọn lệnh và cấu hình phù hợp.
 
 ## 4. Nhật ký vận hành và dừng hệ thống
 
